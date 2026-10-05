@@ -1,0 +1,1 @@
+{"name":"skillpath","private":true,"type":"module","scripts":{"build":"node scripts/build.mjs","test":"node --test tests/*.test.mjs","dev":"npx vercel dev"},"engines":{"node":">=22"}}
