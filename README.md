@@ -1,6 +1,8 @@
-# SkillPath — Connected Learning Platform
+# SkillPath — Connected Learning Platform · 1.1.0
 
 HTML, CSS and vanilla JavaScript frontend with Firebase Authentication, server-owned Firestore storage, Gemini-generated learning plans, Cytoscape knowledge graphs and Chart.js progress charts.
+
+For an existing Vercel installation, start with **LAUNCH.md**. This release needs no database migration.
 
 ## Current delivery
 
@@ -45,6 +47,7 @@ Starter content: 13 competencies, 3 complete web-development career paths, 13 in
 | GEMINI_API_KEY | Google AI Studio API key | Yes |
 | GEMINI_MODEL | Available model ID for your account | No |
 | AI_DAILY_LIMIT | Optional integer, default 5, clamped to 1–20 | No |
+| AI_GLOBAL_DAILY_LIMIT | Shared attempted generations per UTC day, default 100, clamped to 1–10000 | No |
 
 Firebase web configuration is public and delivered by `/api/config`. It does not authorize access. Gemini and service-account secrets are never returned. Protect Firebase configuration with the application's server authorization and deny-all Firestore rules, not by hiding its public web API key.
 
@@ -97,7 +100,7 @@ Live account tests and visual browser QA remain pending; no external credentials
 
 ## Operational limits
 
-This version is designed for a semester project and a small learning cohort. Catalog reads are bounded (up to 400 records per collection for admin entry); learner history displays the latest 30 assessments and admin learners paginate in groups of 50. Firestore reads occur on workspace refresh and explicit actions, not realtime listeners. AI requests have timeouts and a persisted daily quota. Budget/account-wide abuse protections and broader large-scale load testing require deployment-specific work.
+This version is designed for a semester project and a small learning cohort. Catalog reads are bounded (up to 400 records per collection for admin entry); learner history displays the latest 30 assessments and admin learners paginate in groups of 50. Firestore reads occur on workspace refresh and explicit actions, not realtime listeners. AI requests have timeouts and a persisted daily quota. A shared daily AI generation cap limits calls across accounts; Firebase Auth signup abuse protection, Firestore budgets, backups and broader load testing still require deployment-specific work. Failed upstream AI requests count toward the limits, and limits reset at midnight UTC.
 
 No service account or API credentials should be entered into browser forms, admin content, source code, or chat messages. Change server secrets through hosting environment settings, then redeploy.
 

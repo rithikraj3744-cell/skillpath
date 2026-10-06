@@ -1,7 +1,8 @@
+import {validRecordId} from '../public/js/record-id.js';
 export class AppError extends Error { constructor(status,message){super(message);this.status=status;} }
 export const must=(condition,message,status=400)=>{if(!condition)throw new AppError(status,message);};
 export const clean=(s,max=200)=>typeof s==='string'?s.trim().slice(0,max):'';
-export const validId=s=>typeof s==='string'&&!['constructor','prototype'].includes(s)&&/^[a-z0-9][a-z0-9_-]{0,79}$/.test(s);
+export const validId=validRecordId;
 export function topo(competencies){
  const map=new Map(competencies.map(c=>[c.id,c])),seen=new Set(),active=new Set(),out=[];
  function visit(id){must(map.has(id),`Missing prerequisite: ${id}`);must(!active.has(id),'Prerequisites cannot contain a cycle.');if(seen.has(id))return;active.add(id);for(const pre of map.get(id).prerequisites||[])visit(pre);active.delete(id);seen.add(id);out.push(map.get(id));}

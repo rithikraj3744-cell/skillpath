@@ -5,16 +5,46 @@ export const icon=id=>`<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stro
 export const logo=`<a class="logo" href="#dashboard"><span class="brand-mark">${icon('cap')}</span>SkillPath</a>`;
 export const bar=n=>`<div class="bar"><i style="width:${Math.max(0,Math.min(100,Number(n)||0))}%"></i></div>`;
 export const heading=(title,sub,action='')=>`<div class="heading"><div><h1>${title}</h1><p>${sub}</p></div>${action}</div>`;
-export const btn=(text,route)=>`<a class="primary" href="#${route}">${text} →</a>`;
+export const btn=(text,route)=>`<a class="primary" href="#${route}">${text}</a>`;
 export const empty=(title,sub,action='')=>`<div class="card empty"><h2>${title}</h2><p>${sub}</p><div class="empty-action">${action}</div></div>`;
 export const status=s=>`<span class="status status-${esc(s)}">${esc(s[0].toUpperCase()+s.slice(1))}</span>`;
 export function toast(message){$('#toast').textContent=message;$('#toast').style.display='block';clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>$('#toast').style.display='none',4500);}
+let navigationCleanup=()=>{};
+export function resetShell(){navigationCleanup();navigationCleanup=()=>{};}
 export function shell(data,page,body){
+ resetShell();
  const nav=[['dashboard','Dashboard'],['journey','My Journey'],['graph','Knowledge Graph'],['assessment','Assessments'],['learning','Learning Modules'],['progress','Progress'],['profile','Profile']];if(data?.user?.admin)nav.push(['admin','Admin Studio']);
- $('#app').innerHTML=`<div class="shell"><aside class="sidebar">${logo}<div class="nav-label">WORKSPACE</div><nav class="nav">${nav.map(([id,name])=>`<a href="#${id}" class="${page===id?'active':''}"><span class="icon">${icon(id)}</span>${name}</a>`).join('')}</nav><div class="sidebar-bottom"><a class="link" href="#setup">Setup & connection status</a><hr><button class="logout" id="logout">↪ &nbsp; Sign out</button></div></aside><section class="workspace"><header class="topbar"><button class="mobile-toggle" aria-label="Toggle navigation">☰</button><form id="search-form"><input class="search" name="query" placeholder="Search competencies…" aria-label="Search competencies"></form><div class="top-right"><span class="live-label">● Firebase connected</span><a class="user" href="#profile"><div class="avatar">${esc((data.profile.name||'L')[0])}</div><div><strong>${esc(data.profile.name)}</strong><small>${data.user.admin?'Administrator':'Student'}</small></div></a></div></header><main class="page-${page}">${body}</main></section></div>`;
- $('.mobile-toggle').onclick=()=>$('.sidebar').classList.toggle('open');
- $('#search-form').onsubmit=e=>{e.preventDefault();const q=new FormData(e.target).get('query').toLowerCase();const node=data.nodes.find(n=>n.name.toLowerCase().includes(q));if(node)location.hash='graph/'+node.id;else toast('No matching competency in your selected career.');};
+ $('#app').innerHTML=`<div class="shell"><aside class="sidebar" id="app-navigation" aria-label="Navigation"><button class="nav-close" aria-label="Close navigation">✕</button>${logo}<div class="nav-label">WORKSPACE</div><nav class="nav">${nav.map(([id,name])=>`<a href="#${id}" class="${page===id?'active':''}" ${page===id?'aria-current="page"':''}><span class="icon">${icon(id)}</span>${name}</a>`).join('')}</nav><div class="sidebar-bottom"><a class="link" href="#help">Help & data use</a>${data.user.admin?'<br><a class="link" href="#setup">Setup & connection status</a>':''}<hr><button class="logout" id="logout">↪ &nbsp; Sign out</button></div></aside><div class="nav-backdrop" aria-hidden="true"></div><section class="workspace"><header class="topbar"><button class="mobile-toggle" aria-label="Toggle navigation" aria-controls="app-navigation" aria-expanded="false">☰</button><form id="search-form"><input class="search" name="query" placeholder="Search competencies…" aria-label="Search competencies"></form><div class="top-right"><span class="live-label">Workspace synced</span><a class="user" href="#profile" aria-label="Open your profile"><div class="avatar">${esc((data.profile.name||'L')[0])}</div><div><strong>${esc(data.profile.name)}</strong><small>${data.user.admin?'Administrator':'Student'}</small></div></a></div></header><main id="main-content" tabindex="-1" class="page-${esc(page)}">${body}</main></section></div>`;
+ const sidebar=$('.sidebar'),toggle=$('.mobile-toggle'),workspace=$('.workspace');
+ const mobile=window.matchMedia('(max-width: 64rem)');
+ const setNavigation=(open,restoreFocus=true)=>{
+  open=open&&mobile.matches;
+  sidebar.classList.toggle('open',open);
+  toggle.setAttribute('aria-expanded',String(open));
+  workspace.inert=open;
+  if(open){sidebar.setAttribute('role','dialog');sidebar.setAttribute('aria-modal','true');$('.nav-close').focus();}
+  else{sidebar.removeAttribute('role');sidebar.removeAttribute('aria-modal');if(restoreFocus&&mobile.matches&&toggle.isConnected)toggle.focus();}
+ };
+ toggle.onclick=()=>setNavigation(!sidebar.classList.contains('open'));
+ $('.nav-close').onclick=()=>setNavigation(false);
+ $('.nav-backdrop').onclick=()=>setNavigation(false);
+ sidebar.addEventListener('click',e=>{if(e.target.closest('a, #logout'))setNavigation(false,false);});
+ const onKey=e=>{
+  if(!sidebar.classList.contains('open'))return;
+  if(e.key==='Escape'){e.preventDefault();setNavigation(false);}
+  if(e.key==='Tab'){
+   const items=[...sidebar.querySelectorAll('a[href],button:not(:disabled)')].filter(el=>el.getClientRects().length);
+   const first=items[0],last=items.at(-1);
+   if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+   else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  }
+ };
+ const onResize=()=>setNavigation(false,false);
+ document.addEventListener('keydown',onKey);
+ mobile.addEventListener('change',onResize);
+ navigationCleanup=()=>{setNavigation(false,false);document.removeEventListener('keydown',onKey);mobile.removeEventListener('change',onResize);};
+ $('#search-form').onsubmit=e=>{e.preventDefault();const q=new FormData(e.target).get('query').trim().toLowerCase();if(!q){toast('Enter a competency name to search.');return;}const node=data.nodes.find(n=>n.name.toLowerCase().includes(q));if(node)location.hash='graph/'+node.id;else toast('No matching competency in your selected career.');};
 }
-export function showDialog(title,content){$('#dialog-title').textContent=title;$('#dialog-content').innerHTML=content;$('#dialog').showModal();}
-export function installDialog(){if($('#dialog'))return;document.body.insertAdjacentHTML('beforeend','<dialog id="dialog"><div class="dialog-head"><h2 id="dialog-title"></h2><button id="dialog-close" aria-label="Close dialog">✕</button></div><div id="dialog-content"></div></dialog>');$('#dialog-close').onclick=()=>$('#dialog').close();}
-export async function busy(button,fn){const label=button.textContent;button.disabled=true;button.textContent='Working…';try{return await fn();}catch(e){toast(e.message);const error=$('#form-error');if(error)error.textContent=e.message;}finally{button.disabled=false;button.textContent=label;}}
+export function showDialog(title,content){$('#dialog-title').textContent=title;$('#dialog-content').innerHTML=content;$('#dialog').oncancel=null;$('#dialog-close').onclick=()=>$('#dialog').close();$('#dialog').showModal();$('#dialog').scrollTop=0;}
+export function installDialog(){if($('#dialog'))return;document.body.insertAdjacentHTML('beforeend','<dialog id="dialog" aria-labelledby="dialog-title"><div class="dialog-head"><h2 id="dialog-title"></h2><button id="dialog-close" aria-label="Close dialog">✕</button></div><div id="dialog-content"></div></dialog>');$('#dialog-close').onclick=()=>$('#dialog').close();}
+export async function busy(button,fn){const label=button.textContent;button.disabled=true;button.setAttribute('aria-busy','true');button.textContent='Working…';const oldError=$('#dialog[open] #form-error')||$('#form-error');if(oldError)oldError.textContent='';try{return await fn();}catch(e){toast(e.message);const error=$('#dialog[open] #form-error')||$('#form-error');if(error)error.textContent=e.message;}finally{button.disabled=false;button.removeAttribute('aria-busy');button.textContent=label;}}

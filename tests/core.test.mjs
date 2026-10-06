@@ -45,3 +45,49 @@ test('Gemini response is validated, cached, and safely handles upstream failures
  db.docs.delete('journeys/student');response=await handleAPI(req(),aiEnv,{db,verify:verifier,fetcher:async()=>new Response('quota',{status:429})});assert.equal(response.status,429);assert.equal(await db.get('journeys/student'),null);
  response=await handleAPI(req(),aiEnv,{db,verify:verifier,fetcher:async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:'not JSON'}]}}]}))});assert.equal(response.status,502);assert.equal(await db.get('journeys/student'),null);
 });
+
+test('admin invalid record IDs produce actionable validation instead of a missing route',async()=>{
+ const {db,admin}=await seeded();
+ for(const id of ['Python - Basics','python - basics','bad/id','constructor']){
+  const response=await admin('admin/competencies/'+encodeURIComponent(id),'PUT',{record:{...SEED.competencies[0],id}});
+  assert.equal(response.status,400);assert.match(response.data.error,/Record ID/);
+ }
+ assert.equal(await db.get('competencies/Python - Basics'),null);
+ const response=await admin('admin/competencies/python-basics','PUT',{record:{...SEED.competencies[0],name:'Python – For Beginners'},expectedUpdateTime:null});
+ assert.equal(response.status,200);assert.equal((await db.get('competencies/python-basics')).name,'Python – For Beginners');
+});
+
+test('ID suggestions normalize the exact reported inputs and enforce valid boundaries',async()=>{
+ const {suggestRecordId,validRecordId}=await import('../public/js/record-id.js');
+ for(const label of ['Python - Basics','python - basics','Python / Basics'])assert.equal(suggestRecordId(label),'python-basics');
+ assert.equal(suggestRecordId('Café Basics'),'cafe-basics');
+ assert.equal(validRecordId(suggestRecordId('constructor')),true);
+ assert.equal(validRecordId('python - basics'),false);
+ assert.equal(validRecordId('a'.repeat(81)),false);
+ assert.equal(validRecordId('a'.repeat(80)),true);
+});
+
+test('shared AI quota stops a second learner without consuming their personal quota',async()=>{
+ const {db}=await seeded();await enrolled(db,'second');
+ const date=new Date().toISOString().slice(0,10);await db.put('aiUsage/global_'+date,{count:2});
+ const call=client(db,'second',{GEMINI_API_KEY:'test',GEMINI_MODEL:'test',AI_GLOBAL_DAILY_LIMIT:'2'});
+ const result=await call('journey/generate','POST',{});assert.equal(result.status,429);assert.match(result.data.error,/shared AI/);
+ assert.equal(await db.get('aiUsage/second_'+date),null);assert.equal((await call('bootstrap')).status,200);
+});
+
+test('AI generation refuses a result after the learner changes career',async()=>{
+ const {db}=await seeded();await enrolled(db);
+ const request=new Request('https://test.local/api/journey/generate',{method:'POST',headers:{authorization:'Bearer student','content-type':'application/json'},body:'{}'});
+ const response=await handleAPI(request,{...env,GEMINI_API_KEY:'test',GEMINI_MODEL:'test'},{db,verify:verifier,fetcher:async()=>{
+  const profile=await db.get('users/student');await db.put('users/student',{...profile,careerId:'frontend'},profile);
+  const stages=pathway(SEED,'full-stack',{}).map(n=>({competencyId:n.id,reason:'Learn',objectives:['Practice'],estimatedHours:2}));
+  return new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({summary:'Plan',stages})}]}}]}));
+ }});
+ assert.equal(response.status,409);assert.equal(await db.get('journeys/student'),null);
+});
+
+test('liveness reveals no credentials and non-object payloads receive a clear client error',async()=>{
+ const db=new MemoryDB();const call=client(db);
+ assert.deepEqual((await call('health')).data,{status:'ok',version:'1.1.0'});
+ for(const input of [null,[],123])assert.equal((await call('profile','PUT',input)).status,400);
+});
