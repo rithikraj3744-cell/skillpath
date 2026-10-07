@@ -88,6 +88,36 @@ test('AI generation refuses a result after the learner changes career',async()=>
 
 test('liveness reveals no credentials and non-object payloads receive a clear client error',async()=>{
  const db=new MemoryDB();const call=client(db);
- assert.deepEqual((await call('health')).data,{status:'ok',version:'1.1.0'});
+ assert.deepEqual((await call('health')).data,{status:'ok',version:'1.2.0'});
  for(const input of [null,[],123])assert.equal((await call('profile','PUT',input)).status,400);
+});
+
+test('Google identity bootstraps a profile once without resetting saved learner goals',async()=>{
+ const db=new MemoryDB();const request=()=>new Request('https://test.local/api/bootstrap');
+ const user={uid:'google-user',email:'student@example.com',name:'Google Learner',admin:false};
+ const call=()=>handleAPI(request(),env,{db,verify:async()=>user});
+ const first=await (await call()).json();assert.equal(first.profile.name,'Google Learner');assert.equal(first.user.admin,false);
+ const existing=await db.get('users/google-user');await db.put('users/google-user',{...existing,careerId:'frontend',weeklyStudyHours:12},existing);
+ const next=await (await call()).json();assert.equal(next.profile.careerId,'frontend');assert.equal(next.profile.weeklyStudyHours,12);
+});
+test('new careers support baseline assessment, persisted mastery, and lesson access',async()=>{
+ for(const careerId of ['data-analyst','applied-ai']){
+  const {db}=await seeded();const call=client(db,'student');
+  assert.equal((await call('profile','PUT',{name:'Learner',careerId,weeklyStudyHours:6})).status,200);
+  const started=await call('assessments/start','POST',{});assert.equal(started.status,200);
+  assert.ok(started.data.questions.every(q=>!('correctIndex' in q)&&!('explanation' in q)));
+  const session=await db.get('sessions/student');
+  for(const q of session.questions){const original=SEED.questions.find(item=>item.id===q.id);assert.equal(q.options[q.correctIndex],original.options[original.correctIndex]);}
+  const submitted=await call('assessments/submit','POST',{sessionId:session.id,answers:session.questions.map(q=>q.correctIndex)});
+  assert.equal(submitted.data.overall,100);const state=(await call('bootstrap')).data;
+  assert.ok(state.nodes.every(n=>n.status==='mastered'));assert.equal(state.history.length,1);
+  assert.equal((await call('modules/complete','POST',{moduleId:'python-module'})).status,200);
+ }
+});
+test('completed pathways do not consume AI allowance or call the provider',async()=>{
+ const {db}=await seeded();await enrolled(db);
+ await db.put('progress/student',{scores:Object.fromEntries(pathway(SEED,'full-stack',{}).map(n=>[n.id,100])),weakConcepts:{},completedModules:[],revision:1});
+ const request=new Request('https://test.local/api/journey/generate',{method:'POST',headers:{authorization:'Bearer student','content-type':'application/json'},body:'{}'});
+ let calls=0;const response=await handleAPI(request,{...env,GEMINI_API_KEY:'test',GEMINI_MODEL:'test-model'},{db,verify:verifier,fetcher:async()=>{calls++;}});
+ assert.equal(response.status,200);assert.deepEqual((await response.json()).stages,[]);assert.equal(calls,0);assert.equal((await db.all('aiUsage')).length,0);
 });

@@ -168,3 +168,26 @@ dialog { width: min(53rem, calc(100% - 2rem)); max-height: calc(100dvh - 2rem); 
   .stage-progress { grid-column: 1; }
   .stage-icon { display: none; }
 }
+
+/* Account access and focused learning guidance. */
+.google-button { display:flex; align-items:center; justify-content:center; gap:.75rem; width:100%; min-height:3rem; padding:.75rem 1rem; border:1px solid #747775; border-radius:.5rem; color:#1f1f1f; background:#fff; font-size:var(--text-ui); font-weight:600; }
+.google-button:hover { background:#f5f7fc; }
+.google-button img { flex-shrink:0; }
+.google-note { text-align:center; }
+.auth-divider { display:flex; align-items:center; gap:.75rem; margin:1.5rem 0 .75rem; color:var(--muted); font-size:var(--text-small); }
+.auth-divider::before,.auth-divider::after { content:''; flex:1; height:1px; background:var(--line); }
+.insight { align-self:start; justify-content:flex-start; gap:1.25rem; }
+.insight h2 { margin:0; }
+.insight .primary { margin-top:0; }
+.insight .focus-step { border-top:1px solid #d9ccef; padding-top:1rem; width:100%; }
+.focus-step h3 { margin:.5rem 0; }
+.focus-step .actions { margin-top:1rem; }
+.milestones { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--layout-gap); margin-top:1.5rem; }
+.milestone { padding:var(--card-space); border-radius:.75rem; border:1px solid var(--line); background:#fff; }
+.milestone.earned { background:#effaf5; border-color:#b5dcc9; }
+.milestone .status { margin-bottom:.75rem; }
+.milestone p { font-size:var(--text-ui); }
+.career-options { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr)); gap:1rem; margin-top:1.5rem; }
+.career-option { padding:var(--card-space); border:1px solid var(--line); border-radius:.75rem; background:#fff; }
+.career-option p { font-size:var(--text-ui); margin:.5rem 0 1rem; }
+@media(max-width:44rem) { .milestones { grid-template-columns:minmax(0,1fr); } }

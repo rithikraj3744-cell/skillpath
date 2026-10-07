@@ -1,4 +1,4 @@
-# SkillPath 1.1.0 — Update and launch
+# SkillPath 1.2.0 — Update and launch
 
 ## Upgrade your working Vercel website
 
@@ -7,7 +7,7 @@
 3. Commit these changes to the same GitHub repository/branch connected to Vercel. For a browser upload, drag whole folders to preserve their paths; do not upload only root-level files or the ZIP.
 4. Keep Vercel Framework = Other, Root Directory = folder containing package.json and api/, Build Command = node scripts/vercel-build.mjs, Output Directory = public, Node = 22.x.
 5. The existing environment variables continue to work. Optional AI_GLOBAL_DAILY_LIMIT defaults to 100 attempted generations across all users per UTC day; set a smaller value if needed. AI_DAILY_LIMIT defaults to 5 per user. These are application limits, not a provider billing cap.
-6. Deploy the latest commit. Hard-refresh the browser (Ctrl+Shift+R). Check /api/health: it should show version 1.1.0. Health is a liveness check only and does not test provider credentials.
+6. Deploy the latest commit. Hard-refresh the browser (Ctrl+Shift+R). Check /api/health: it should show version 1.2.0. Health is a liveness check only and does not test provider credentials.
 
 ## What changed
 

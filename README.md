@@ -1,38 +1,38 @@
-# SkillPath — Connected Learning Platform · 1.1.0
+# SkillPath — Connected Learning Platform · 1.2.0
 
 HTML, CSS and vanilla JavaScript frontend with Firebase Authentication, server-owned Firestore storage, Gemini-generated learning plans, Cytoscape knowledge graphs and Chart.js progress charts.
 
-For an existing Vercel installation, start with **LAUNCH.md**. This release needs no database migration.
+For this update, start with **UPDATE_GUIDE.md**. For an existing Vercel installation, also see **LAUNCH.md**. This release needs no database migration.
 
 ## Current delivery
 
-The connected application is implemented, but live Firebase and Gemini account verification requires your credentials. Before configuration, `/` shows a setup checklist. `/demo.html` preserves the earlier browser-only design demo; its data is separate from live learner data.
+The connected application is implemented, but live Firebase and Gemini account verification requires your credentials. Before configuration, `/` shows a setup checklist.
 
 Implemented:
-- Registration, email/password login, password reset, session restoration and logout using Firebase Authentication.
+- Google login/signup, registration, email/password login, password reset, session restoration and logout using Firebase Authentication.
 - User-owned profiles, career selection, lesson completion, scores and assessment history.
 - Secure server scoring; answer keys are omitted when starting an assessment.
 - Atomic scoring/progress/history/graph-snapshot writes and idempotent submissions.
 - Prerequisite-aware roadmap and graph, weak-concept remediation nodes, mastery unlocking at 90%.
 - Personalized Gemini generation with validated JSON, prerequisite ordering, cache invalidation and a persistent per-user daily quota.
-- Admin Studio: create/edit/delete competencies, careers, lesson content and questions; search records; view paginated registered learner profiles; load starter content.
+- Admin Studio: create/edit/delete competencies, careers, lesson content and questions; search records; view paginated registered learner profiles; add the learning library.
 - Admin UID allowlist checked server-side on every admin operation. The browser cannot assign roles.
 - Reference validation, cycle prevention, dependent-record deletion checks and optimistic edit conflicts.
 
-Starter content: 13 competencies, 3 complete web-development career paths, 13 introductory lessons, 27 questions. Admins can create additional paths. These are introductory teaching materials intended to be expanded through Admin Studio.
+Starter content: 23 competencies, 5 career paths, 23 lessons, 57 questions. Admins can create additional paths. These are introductory teaching materials intended to be expanded through Admin Studio.
 
 ## Your setup checklist
 
 1. Create a Firebase project and register a Web app.
-2. Enable Authentication → Email/Password.
+2. Enable Authentication → Sign-in method → Email/Password and Google. Select a support email for Google and save.
 3. Add your deployed hostname to Authentication → Settings → Authorized domains. Add localhost for local development.
 4. Create a **Firestore Standard / Native-mode** `(default)` database, in production mode.
 5. Publish `firestore.rules`. All direct browser database access is denied; the server uses a dedicated service account and validates each operation.
 6. Create a dedicated Google Cloud service account in the same project with **Cloud Datastore User** (`roles/datastore.user`) access. Create a JSON key, and paste its full JSON as the secret `FIREBASE_SERVICE_ACCOUNT_JSON` in your hosting environment. Do not commit the key.
 7. Copy the Web app's projectId, apiKey, authDomain and appId into the environment variables listed below.
-8. Add your own user in Authentication → Users. Put that Firebase UID in `ADMIN_UIDS` to grant administrator access. No hardcoded demo admin or password exists.
+8. Add your own user in Authentication → Users. Put that Firebase UID in `ADMIN_UIDS` to grant administrator access. Administrator access is granted only through the UID allowlist.
 9. Create a Gemini API key in Google AI Studio and configure an available model supported by your account. Free-tier availability/quotas are not guaranteed by this application.
-10. Redeploy after changing environment settings. Sign in as admin, load starter content, select a career in your profile, and complete the verification flow below.
+10. Redeploy after changing environment settings. Sign in as admin, add the learning library, select a career in your profile, and complete the verification flow below.
 
 ## Environment variables
 

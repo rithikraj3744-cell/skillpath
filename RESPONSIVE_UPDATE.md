@@ -44,6 +44,3 @@ testing and physical-device testing were unavailable in the editing environment.
 - Open an admin editor and check scrolling, long record names, and save/cancel controls.
 - Generate a roadmap using your working Gemini configuration and read the full result.
 - Check assessment navigation and horizontally scroll the history/admin tables.
-
-The legacy `/demo.html` is a separate sample; these changes target the real app
-at `/`, which is the production learner and administrator experience.

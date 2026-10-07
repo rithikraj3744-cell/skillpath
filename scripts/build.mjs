@@ -2,7 +2,7 @@ import {readFile,writeFile,mkdir,rm,readdir,copyFile} from 'node:fs/promises';
 import {resolve,relative,extname} from 'node:path';
 const root=resolve(import.meta.dirname,'..');
 let source=(await readFile(resolve(root,'public/js/record-id.js'),'utf8')).replace(/\bexport /g,'')+'\n';
-for(const file of ['engine.js','firebase.js','seed.js','api.js']){
+for(const file of ['engine.js','firebase.js','curriculum.js','seed.js','ai.js','api.js']){
  const code=await readFile(resolve(root,'server',file),'utf8');
  source+=`\n// ${file}\n`+code.replace(/^import .*;\n/gm,'').replace(/\bexport (?=(async )?(function|class|const|let)\b)/g,'');
 }
