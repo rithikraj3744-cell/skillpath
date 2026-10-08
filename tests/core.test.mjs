@@ -88,7 +88,7 @@ test('AI generation refuses a result after the learner changes career',async()=>
 
 test('liveness reveals no credentials and non-object payloads receive a clear client error',async()=>{
  const db=new MemoryDB();const call=client(db);
- assert.deepEqual((await call('health')).data,{status:'ok',version:'1.4.0'});
+ assert.deepEqual((await call('health')).data,{status:'ok',version:'1.5.0'});
  for(const input of [null,[],123])assert.equal((await call('profile','PUT',input)).status,400);
 });
 

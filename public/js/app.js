@@ -19,7 +19,7 @@ function authView(mode){const registering=mode==='register',reset=mode==='reset'
 }
 function render(){
  resetShell();
- const [rawPage,part]=location.hash.slice(1).split('/');const page=rawPage||'dashboard';
+ const [rawPage,part]=(learner.activeAssessmentRoute()||location.hash.slice(1)).split('/');const page=rawPage||'dashboard';
  document.title=({dashboard:'Dashboard',journey:'My Journey',graph:'Knowledge Graph',learning:'Learning Modules',assessment:'Assessments',profile:'My Profile',progress:'Progress',admin:'Admin Studio',help:'Help',register:'Create Account',login:'Sign In'}[page]||'Learning Workspace')+' · SkillPath';
  if(page==='help'){$('#app').innerHTML=helpView(!!getUser());return;}
  if(!config){$('#app').innerHTML='<div class="app-loading">Connecting to SkillPath…</div>';return;}

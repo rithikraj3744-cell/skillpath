@@ -1,3 +1,4 @@
+import {assessmentRoute} from './assessments.js';
 import {ASSESSMENT_POLICY} from '../public/js/assessment-policy.js';
 import {handleRecovery} from './recovery.js';
 import {AppError,must,clean,validId,pathway,deterministicRoadmap,scoreQuestions,validateRecord,validateCatalog,validateAI,fingerprint} from './engine.js';
@@ -36,7 +37,7 @@ export async function handleAPI(request,env,deps={}){
  try{
  const url=new URL(request.url),path=url.pathname.replace(/^\/api\/?/,'').replace(/\/$/,''),method=request.method;
  if(path==='config'&&method==='GET')return json(configuration(env));
- if(path==='health'&&method==='GET')return json({status:'ok',version:'1.4.0'});
+ if(path==='health'&&method==='GET')return json({status:'ok',version:'1.5.0'});
  must(configuration(env).ready,'Firebase setup is incomplete. Open Setup for the required configuration.',503);
  must(['GET','POST','PUT','DELETE'].includes(method),'Method not allowed.',405);
  if(method!=='GET'){const origin=request.headers.get('origin');must(!origin||origin===url.origin,'Cross-origin writes are not allowed.',403);must((request.headers.get('content-type')||'').startsWith('application/json'),'Send JSON content.',415);}
@@ -61,17 +62,11 @@ export async function handleAPI(request,env,deps={}){
  const id=body.moduleId;must(validId(id),'Invalid module.');const module=await db.get(`modules/${id}`);must(module,'Module not found.',404);const [cat,profile,progress]=await Promise.all([catalog(db),profileFor(db,user),progressFor(db,user.uid)]);const node=pathway(cat,profile.careerId,progress).find(n=>n.id===module.competencyId);must(node&&node.status!=='locked','Complete prerequisites before studying this module.',403);
  if(!progress.completedModules.includes(id)){const old=progress._updateTime?progress:null;await db.put(`progress/${user.uid}`,{...strip(progress),completedModules:[...progress.completedModules,id],revision:progress.revision+1,updatedAt:nowISO()},old);}return json({saved:true});
  }
- if(path==='assessments/start'&&method==='POST'){
- const [cat,profile,progress]=await Promise.all([catalog(db,true),profileFor(db,user),progressFor(db,user.uid)]);const nodes=pathway(cat,profile.careerId,progress);must(nodes.length,'Select a career in your profile first.');const competencyId=body.competencyId||nodes.find(n=>n.status!=='locked'&&n.status!=='mastered')?.id||nodes.find(n=>n.status!=='locked')?.id;if(competencyId){const node=nodes.find(n=>n.id===competencyId);must(node&&node.status!=='locked','This competency is locked or not in your career path.',403);}
- const previous=await db.get(`sessions/${user.uid}`);if(previous?.policy?.version===ASSESSMENT_POLICY.version&&previous?.status==='active'&&previous.expiresAt>Date.now()&&previous.competencyId===competencyId&&previous.careerId===profile.careerId)return json({id:previous.id,questions:previous.questions.map(({correctIndex,explanation,...q})=>q),expiresAt:previous.expiresAt,competencyId,policy:ASSESSMENT_POLICY});
- const bank=cat.questions.filter(q=>q.competencyId===competencyId);must(bank.length>=ASSESSMENT_POLICY.questionCount,`This competency needs ${ASSESSMENT_POLICY.questionCount} questions before assessment. Ask an admin to add ${ASSESSMENT_POLICY.questionCount-bank.length} more.`,409);
- const questions=bank.map(q=>({q,rank:Math.random()})).sort((a,b)=>a.rank-b.rank).slice(0,ASSESSMENT_POLICY.questionCount).map(({q})=>{const options=q.options.map((text,index)=>({text,index,rank:Math.random()})).sort((a,b)=>a.rank-b.rank);return {...strip(q),options:options.map(o=>o.text),correctIndex:options.findIndex(o=>o.index===q.correctIndex)};});
- const session={id:crypto.randomUUID(),careerId:profile.careerId,competencyId,questions,policy:ASSESSMENT_POLICY,status:'active',expiresAt:Date.now()+60*60*1000,createdAt:nowISO()};await db.put(`sessions/${user.uid}`,session,previous);return json({id:session.id,questions:questions.map(({correctIndex,explanation,...q})=>q),expiresAt:session.expiresAt,competencyId,policy:ASSESSMENT_POLICY});
- }
- if(path==='assessments/submit'&&method==='POST'){
- const session=await db.get(`sessions/${user.uid}`);must(session&&session.id===body.sessionId,'Assessment session not found.',404);if(session.status==='submitted')return json(session.result);must(session.policy?.version===ASSESSMENT_POLICY.version,'Assessment rules changed. Start a new 40-question assessment.',409);must(session.expiresAt>Date.now(),'Assessment expired. Start a new attempt.',409);const currentProfile=await profileFor(db,user);must(currentProfile.careerId===session.careerId,'Your career changed. Start a new assessment for your current path.',409);const result=scoreQuestions(session.questions,body.answers),progress=await progressFor(db,user.uid);const updated={...strip(progress),scores:{...progress.scores,...result.scores},weakConcepts:{...progress.weakConcepts,...result.weakConcepts},revision:progress.revision+1,updatedAt:nowISO()};
- const id=String(9999999999999-Date.now())+'-'+crypto.randomUUID().slice(0,8);const summary={id,createdAt:nowISO(),score:result.overall,competencyId:session.competencyId,scores:result.scores,questionCount:session.questions.length,policy:ASSESSMENT_POLICY,marks:result.marks,correct:result.correct,wrong:result.wrong,unanswered:result.unanswered,passed:result.passed};
- const graphCatalog=await catalog(db);const graphSnapshot={id,createdAt:summary.createdAt,careerId:session.careerId,revision:updated.revision,nodes:pathway(graphCatalog,session.careerId,updated),weakConcepts:updated.weakConcepts};const nextSession={...strip(session),status:'submitted',result:{...result,createdAt:summary.createdAt}};await db.commit([db.write(`progress/${user.uid}`,updated,progress._updateTime?progress:null),db.write(`sessions/${user.uid}`,nextSession,session),db.write(`users/${user.uid}/history/${id}`,summary,null),db.write(`users/${user.uid}/graphVersions/${id}`,graphSnapshot,null)]);return json(nextSession.result);
+ if(path.startsWith('assessments/')&&['POST','GET'].includes(method)){
+ const allowed=method==='GET'?['assessments/status']:['assessments/start','assessments/checkpoint','assessments/submit','assessments/end','assessments/review'];must(allowed.includes(path),'API route not found.',404);
+ const needsCatalog=['assessments/start','assessments/review'].includes(path),needsProfile=['assessments/start','assessments/submit'].includes(path);
+ const [cat,profile]=await Promise.all([needsCatalog?catalog(db,path==='assessments/start'):null,needsProfile?profileFor(db,user):{}]);
+ return json(await assessmentRoute(path,body,{db,user,cat,profile,env,catalogLoader:()=>catalog(db),fetcher:deps.fetcher||fetch,now:deps.now?deps.now():Date.now()}));
  }
  if(path==='journey/generate'&&method==='POST'){
  const [cat,profile,progress]=await Promise.all([catalog(db),profileFor(db,user),progressFor(db,user.uid)]);return json(await generate(db,env,user,cat,profile,progress,deps.fetcher||fetch));

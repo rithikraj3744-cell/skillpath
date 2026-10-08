@@ -1,8 +1,8 @@
-# SkillPath 1.4.0 — Verification
+# SkillPath 1.5.0 — Verification
 
 ## Automated suite
 
-Run `npm test`. Coverage includes:
+Run `npm test`. The 71-test suite includes the prior coverage plus India-midnight reset, daily quota enforcement, concurrency, duplicate focus-event handling, third-exit lock, interrupted/expired attempt evidence, stale checkpoints, AI review caching/fallback and fullscreen rejection. Coverage includes:
 
 - 1,400 valid starter questions, exactly 40 per competency, career coverage and prerequisite order.
 - Forty unique session questions, shuffled answer mapping, private answer keys, resumable sessions, insufficient-bank errors and obsolete scoring-policy rejection.

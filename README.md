@@ -1,4 +1,4 @@
-# SkillPath — Connected Learning Platform · 1.4.0
+# SkillPath — Connected Learning Platform · 1.5.0
 
 HTML, CSS and vanilla JavaScript frontend with Firebase Authentication, server-owned Firestore storage, Gemini-generated learning plans, Cytoscape knowledge graphs and Chart.js progress charts.
 
@@ -9,6 +9,7 @@ For this update, start with **UPDATE_GUIDE.md**. For an existing Vercel installa
 The connected application is implemented, but live Firebase and Gemini account verification requires your credentials. Before configuration, `/` shows a setup checklist.
 
 Implemented:
+- Fullscreen assessment focus mode, three departures/day lock, three starts per competency per India calendar day, autosaved answers and cumulative AI study guidance. See ASSESSMENT_FOCUS.md.
 - Excel question import with header/answer detection, validation, duplicate protection and a downloadable 40-question example. See QUESTION_IMPORT.md.
 - Email OTP password recovery with server-enforced expiry, attempt limits and single-use authorizations. Requires Resend and Firebase IAM setup; see RECOVERY_SETUP.md.
 - Responsive login/signup page with an original learning illustration.
@@ -85,7 +86,7 @@ Firestore collections: users, progress, journeys, sessions, competencies, career
 
 One lesson per competency is supported; an admin can expand the lesson body and resources. Scoring uses the latest assessment result for each tested competency. Mastery is 60% of net marks. Every competency quiz has exactly 40 questions: +1 correct, −0.25 wrong, 0 unanswered. Passing requires 24 net marks; displayed percentages are floored at zero. Changing a career retains existing scores. Lesson completion does not itself grant mastery. Self-reported skills do not grant scores.
 
-On failed quizzes, weak concepts become remediation branches in the graph. Roadmap availability is recalculated immediately; Gemini is called after submission when configured. A Gemini failure never rolls back a saved quiz. Learners can retry personalization explicitly. Graph snapshots are saved with assessments for reconstruction.
+On failed quizzes, weak concepts become remediation branches in the graph. Roadmap availability is recalculated immediately. AI revision guidance uses cumulative attempt evidence when configured; roadmap regeneration remains available from My Journey. A Gemini failure never rolls back a saved quiz. Learners can retry personalization explicitly. Graph snapshots are saved with assessments for reconstruction.
 
 ## Verification
 

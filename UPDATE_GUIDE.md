@@ -1,9 +1,17 @@
-# SkillPath 1.4.0 — Assessments, Excel import and recovery
+# SkillPath 1.5.0 — Fullscreen assessments and daily limits
+
+Deploy the updated folders to the same GitHub/Vercel project, then hard-refresh. `/api/health` should report **1.5.0**. No new environment variables are needed. Existing 1.4.0 question banks do not need reseeding.
+
+New behavior: fullscreen entry, departure counter, automatic closure and day-long competency lock on departure three, maximum three starts per competency per India calendar day, autosaved answers, and AI study guidance combining completed and interrupted attempts. Read **ASSESSMENT_FOCUS.md** for precise rules and browser limitations.
+
+Only normal submissions update mastery; early closures feed study guidance. Cumulative answer evidence starts with this release. Existing scores and histories stay intact. Active attempts from older versions must restart under the new policy.
+
+## Earlier 1.4.0 setup (for projects not yet upgraded)
 
 ## Update your Vercel project
 
 1. Extract the release ZIP and replace matching files in your GitHub project. Preserve the public/, server/, api/, scripts/ and tests/ folders. Keep your local environment settings; never upload a service-account key or .env.local.
-2. Keep Vercel Framework Other, Build Command `node scripts/vercel-build.mjs`, Output Directory public, Node 22.x. Deploy the commit. `/api/health` should report 1.4.0. Hard-refresh your browser.
+2. Keep Vercel Framework Other, Build Command `node scripts/vercel-build.mjs`, Output Directory public, Node 22.x. Deploy the commit. `/api/health` should report 1.5.0. Hard-refresh your browser.
 3. As admin, select **Admin Studio → Add learning library → Apply library update**. Wait for all batches. The update preserves existing records, custom questions and learner scores. Repeat safely if interrupted.
 4. A fresh catalog contains 35 competencies, 20 careers, 35 lessons and **1,400 questions** — exactly 40 per competency. Custom competencies need at least 40; Catalog readiness flags shortages.
 5. Configure email OTP using **RECOVERY_SETUP.md**. Without sender configuration, Firebase reset-link recovery remains available.
