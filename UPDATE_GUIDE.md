@@ -1,72 +1,25 @@
-# SkillPath 1.2.0 — Google access and learning update
+# SkillPath 1.4.0 — Assessments, Excel import and recovery
 
-## Apply the update
+## Update your Vercel project
 
-1. Extract the complete ZIP. Replace the matching files in your existing GitHub
-   repository, preserving the `public`, `server`, `api`, `scripts`, and `tests` folders.
-2. Delete `public/demo.html`, `public/demo.css`, and `public/demo.js` from the
-   repository if they remain. The Vercel build also removes those retired files
-   from the published output when an upload overlays an old checkout.
-3. Keep your existing working Vercel environment variables. The internal names
-   `GEMINI_API_KEY` and `GEMINI_MODEL` remain unchanged for compatibility; the app's
-   buttons, guidance labels, and error messages say **AI**.
-4. Deploy the latest commit. `/api/health` should report version `1.2.0`.
-5. In Admin Studio, choose **Add learning library**, then **Add missing learning
-   content**. This adds the new catalog records to your own Firestore database.
-   It preserves records with matching IDs, learner profiles, scores, and history.
+1. Extract the release ZIP and replace matching files in your GitHub project. Preserve the public/, server/, api/, scripts/ and tests/ folders. Keep your local environment settings; never upload a service-account key or .env.local.
+2. Keep Vercel Framework Other, Build Command `node scripts/vercel-build.mjs`, Output Directory public, Node 22.x. Deploy the commit. `/api/health` should report 1.4.0. Hard-refresh your browser.
+3. As admin, select **Admin Studio → Add learning library → Apply library update**. Wait for all batches. The update preserves existing records, custom questions and learner scores. Repeat safely if interrupted.
+4. A fresh catalog contains 35 competencies, 20 careers, 35 lessons and **1,400 questions** — exactly 40 per competency. Custom competencies need at least 40; Catalog readiness flags shortages.
+5. Configure email OTP using **RECOVERY_SETUP.md**. Without sender configuration, Firebase reset-link recovery remains available.
 
-## Enable Google login/signup in Firebase
+## Assessment rules
 
-1. Open your Firebase project → Authentication → Sign-in method → Google.
-2. Enable the provider, select your project's support email, and save.
-3. In Authentication → Settings → Authorized domains, add the exact hostname of
-   your production Vercel/custom domain, without `https://` or a path. Add each
-   preview hostname you intend to test separately.
-4. Keep `FIREBASE_AUTH_DOMAIN` equal to the authDomain from your Firebase Web app
-   configuration (normally your project's `firebaseapp.com` domain). Do not
-   substitute the Vercel hostname just because the website is deployed there.
-5. Open the deployed login page in a normal browser tab and choose **Continue with
-   Google**. A first login creates the Firebase account and learner profile;
-   returning users keep their existing profile and progress.
+Every competency quiz selects exactly 40 questions, shuffles choices, and allows 60 minutes. Banks may contain more than 40. Correct +1; wrong −0.25; unanswered 0. Passing requires **24 / 40 net marks (60%)**. Negative raw marks remain visible; the displayed percentage is floored at zero.
 
-Both the sign-in and signup pages offer Google and email/password access. Google
-sign-in uses a popup initiated by the button click. Allow popups for the site if
-the browser blocks it. For embedded browser restrictions, open the site in the
-device's normal browser. No additional email, contacts, or Drive access is requested.
-Administrator privileges still depend on the authenticated Firebase UID being
-listed in `ADMIN_UIDS`.
+- 27 correct + 13 wrong = 23.75 marks = 59.38%, fail.
+- 28 correct + 12 wrong = 25 marks = 62.5%, pass.
+- 24 correct + 16 skipped = 24 marks = 60%, pass.
 
-Reference: https://firebase.google.com/docs/auth/web/google-signin
+The mixed-career baseline is replaced by a quiz for the next available competency. Learners can choose another unlocked competency. Passing unlocks dependent skills. Old active attempts must restart. Completed scores and history remain unchanged, not retroactively rescored; the new 60% threshold applies to current prerequisite mastery.
 
-## Learning features
+## Excel import and account recovery
 
-- 5 career paths: Full Stack, Frontend, Backend, Data Analyst, Applied AI Developer.
-- 23 competencies, 23 lessons, and 57 questions in the bundled teaching library.
-- New lessons include worked examples, practice activities, and reference links.
-- A next-study sprint points to an available competency based on actual scores.
-- Milestones reflect recorded assessments and mastery, without fabricated activity.
-- Career discovery cards select a goal; the learner explicitly saves to apply it.
-- Assessment choices are shuffled while their server-owned answer mapping is retained.
+**Question Bank → Import Excel** reads column headings and the teacher’s supplied answer keys, flags invalid rows, previews questions and imports reviewed records. See QUESTION_IMPORT.md. The example workbook has 40 HTML questions and a Guide sheet. Unchanged examples already exist after seeding, so they are skipped on re-import; edit the prompts to add your own content.
 
-The library is introductory learning material. Extend it with your course-specific
-lessons and a larger assessment bank before treating scores as a high-stakes credential.
-
-## Guidance and reliability fixes
-
-- The guidance card no longer stretches to match a long score list.
-- Learners who have assessment history receive score-based guidance instead of a
-  generic instruction to take a baseline assessment again.
-- AI failures remain visible beside the generation button. Saved scores and the
-  skill-based roadmap continue to work.
-- One bounded retry handles temporary upstream failures. Authentication, quota,
-  and model errors receive actionable messages without exposing provider details.
-- Configuration whitespace and a leading `models/` prefix are normalized.
-- Cached plans are invalidated when the configured model changes.
-- Completed pathways do not spend AI allowance generating empty plans.
-
-## Verification
-
-See `TEST_REPORT.md` for automated coverage and the remaining live checks. A
-successful mocked-provider test does not confirm access to your actual AI account.
-Firebase provider activation and a production Google sign-in must be checked after
-you enable Google and deploy this update.
+Forgot password supports email → six-digit OTP → new password after RECOVERY_SETUP.md is configured. The login/signup page also includes an original learning illustration and responsive styling. See TEST_REPORT.md for test scope and LAUNCH.md for live verification.

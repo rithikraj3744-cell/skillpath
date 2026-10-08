@@ -4,7 +4,7 @@ const b64url=bytes=>btoa(String.fromCharCode(...bytes)).replace(/=/g,'').replace
 const encoded=value=>b64url(encoder.encode(JSON.stringify(value)));
 export function configuration(env){
  const keys=['FIREBASE_PROJECT_ID','FIREBASE_API_KEY','FIREBASE_AUTH_DOMAIN','FIREBASE_APP_ID','FIREBASE_SERVICE_ACCOUNT_JSON'];const missing=keys.filter(k=>!env[k]);
- return {ready:missing.length===0,missing,adminConfigured:!!env.ADMIN_UIDS,aiConfigured:!!(env.GEMINI_API_KEY&&env.GEMINI_MODEL),firebase:{projectId:env.FIREBASE_PROJECT_ID||'',apiKey:env.FIREBASE_API_KEY||'',authDomain:env.FIREBASE_AUTH_DOMAIN||'',appId:env.FIREBASE_APP_ID||''}};
+ return {ready:missing.length===0,missing,adminConfigured:!!env.ADMIN_UIDS,recoveryConfigured:!!(env.RESEND_API_KEY&&env.RECOVERY_FROM_EMAIL&&env.RECOVERY_SECRET?.length>=32),aiConfigured:!!(env.GEMINI_API_KEY&&env.GEMINI_MODEL),firebase:{projectId:env.FIREBASE_PROJECT_ID||'',apiKey:env.FIREBASE_API_KEY||'',authDomain:env.FIREBASE_AUTH_DOMAIN||'',appId:env.FIREBASE_APP_ID||''}};
 }
 export async function verifyUser(request,env,fetcher=fetch){
  const header=request.headers.get('authorization')||'';must(header.startsWith('Bearer ')&&header.length<10000,'Sign in to continue.',401);
@@ -13,14 +13,15 @@ export async function verifyUser(request,env,fetcher=fetch){
  if(!response.ok)throw new AppError(response.status===400||response.status===401?401:503,'Your session could not be verified. Please sign in again.');
  const data=await response.json();const user=data.users?.[0];must(user?.localId&&!user.disabled&&claims.sub===user.localId,'Account unavailable.',401);return {uid:user.localId,email:user.email||'',name:user.displayName||'',admin:(env.ADMIN_UIDS||'').split(',').map(x=>x.trim()).includes(user.localId)};
 }
-async function serviceToken(env){
- if(accessCache.key===env.FIREBASE_SERVICE_ACCOUNT_JSON&&accessCache.until>Date.now()+60000)return accessCache.token;
+export async function serviceToken(env,scope='https://www.googleapis.com/auth/datastore'){
+ const cacheKey=env.FIREBASE_SERVICE_ACCOUNT_JSON+'|'+scope;
+ if(accessCache.key===cacheKey&&accessCache.until>Date.now()+60000)return accessCache.token;
  let sa;try{sa=JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON);}catch{throw new AppError(503,'The Firebase service-account configuration is invalid.');}
  must(sa.project_id===env.FIREBASE_PROJECT_ID&&sa.client_email&&sa.private_key,'Firebase service account must match the configured project.',503);
- const now=Math.floor(Date.now()/1000);const unsigned=encoded({alg:'RS256',typ:'JWT'})+'.'+encoded({iss:sa.client_email,scope:'https://www.googleapis.com/auth/datastore',aud:'https://oauth2.googleapis.com/token',iat:now,exp:now+3600});
+ const now=Math.floor(Date.now()/1000);const unsigned=encoded({alg:'RS256',typ:'JWT'})+'.'+encoded({iss:sa.client_email,scope,aud:'https://oauth2.googleapis.com/token',iat:now,exp:now+3600});
  let key;try{const pem=sa.private_key.replace(/-----[^-]+-----|\s/g,'');key=await crypto.subtle.importKey('pkcs8',Uint8Array.from(atob(pem),c=>c.charCodeAt(0)),{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['sign']);}catch{throw new AppError(503,'Invalid Firebase service-account private key.');}
  const sig=await crypto.subtle.sign('RSASSA-PKCS1-v1_5',key,encoder.encode(unsigned));const assertion=unsigned+'.'+b64url(new Uint8Array(sig));
- const r=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion}),signal:AbortSignal.timeout(12000)});if(!r.ok)throw new AppError(503,'Firebase server credentials were rejected. Check service-account access.');const d=await r.json();accessCache={key:env.FIREBASE_SERVICE_ACCOUNT_JSON,token:d.access_token,until:Date.now()+d.expires_in*1000};return accessCache.token;
+ const r=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion}),signal:AbortSignal.timeout(12000)});if(!r.ok)throw new AppError(503,'Firebase server credentials were rejected. Check service-account access.');const d=await r.json();accessCache={key:cacheKey,token:d.access_token,until:Date.now()+d.expires_in*1000};return accessCache.token;
 }
 export function toValue(v){if(v===null)return {nullValue:null};if(typeof v==='string')return {stringValue:v};if(typeof v==='boolean')return {booleanValue:v};if(typeof v==='number')return Number.isInteger(v)?{integerValue:String(v)}:{doubleValue:v};if(Array.isArray(v))return {arrayValue:{values:v.map(toValue)}};return {mapValue:{fields:Object.fromEntries(Object.entries(v).filter(([,x])=>x!==undefined).map(([k,x])=>[k,toValue(x)]))}};}
 export function fromValue(v){if('stringValue'in v)return v.stringValue;if('integerValue'in v)return Number(v.integerValue);if('doubleValue'in v)return v.doubleValue;if('booleanValue'in v)return v.booleanValue;if('nullValue'in v)return null;if('arrayValue'in v)return (v.arrayValue.values||[]).map(fromValue);if('mapValue'in v)return Object.fromEntries(Object.entries(v.mapValue.fields||{}).map(([k,x])=>[k,fromValue(x)]));if('timestampValue'in v)return v.timestampValue;return null;}

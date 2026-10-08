@@ -1,50 +1,26 @@
-# SkillPath 1.2.0 — verification report
+# SkillPath 1.4.0 — Verification
 
-Automated checks run against the actual source using `npm test`.
+## Automated suite
 
-## Covered by automated tests
+Run `npm test`. Coverage includes:
 
-- Google provider setup for new and returning accounts; popup cancellation,
-  popup blocking, disabled provider, and unauthorized-domain messages.
-- Verified Google identity creates a learner profile once and preserves saved goals.
-- AI temporary-failure retry, retry limit, normalized model/key settings, invalid
-  model configuration, quota/permission/model errors, timeout, malformed output,
-  truncation, and exclusion of reasoning text from the returned JSON.
-- AI error messages do not leak simulated credentials or upstream project details.
-- AI schema validation, caching, changing goals during generation, and completed
-  pathways that should not consume an AI call.
-- Expanded catalog record validation, prerequisite cycles, lesson coverage, and
-  question coverage for every career path.
-- Data Analyst and Applied AI baseline assessments, shuffled answer mapping,
-  saved scores, history, unlocked lessons, and lesson completion.
-- Admin access denial for learners, record create/edit/delete, stale writes,
-  reference checks, and idempotent library import.
-- Cross-origin write denial, profile/history ownership, server-only answer keys,
-  atomic assessment updates, replay protection, and quota limits.
-- Learner view rendering, escaped profile text, provider-neutral labels,
-  progress-aware guidance, and milestone rendering.
+- 1,400 valid starter questions, exactly 40 per competency, career coverage and prerequisite order.
+- Forty unique session questions, shuffled answer mapping, private answer keys, resumable sessions, insufficient-bank errors and obsolete scoring-policy rejection.
+- +1/−0.25/0 marking, exact 60% boundary, skips, negative raw totals, percentage floor, unlocking, atomic saves and idempotent submission.
+- Excel aliases, title rows, competency matching, letter/number/text keys, invalid and ambiguous rows, stable IDs and byte-bounded batches.
+- The actual downloadable XLSX read with the production SheetJS reader: 40 valid rows, matching answers and no formula/error cells.
+- Admin-only imports, atomic batches, duplicate protection, safe re-import and bounded/resumable seeding preserving custom records.
+- OTP verification before reset, hashed codes, single-use codes/tokens, concurrent verification, expiry, five-attempt limit, resend cooldown, rate cap, unknown-account response and delivery-failure invalidation.
+- Existing authorization, data ownership, Google flow, profile changes, modules/resources and AI validation/cache/quota/error behavior.
 
-Deployment checks also verify required frontend/backend assets, Worker ESM output,
-retired page URLs returning 404, setup behavior, and private server-source isolation.
+External Firebase, Firestore, AI and Resend calls are mocked. Tests do not establish that production credentials, IAM, domains, quotas or email delivery work.
 
-## Not verified in this environment
+## Artifact checks
 
-The required browser-control skill is unavailable. No live visual browser test,
-physical-device test, real Google OAuth flow, or request using your production AI
-credentials was performed. No production learner data was changed by these tests.
+JavaScript syntax; Vercel source layout; Worker ESM, assets, sample download, setup mode and server-source isolation; workbook sheets rendered and visually inspected; source ZIP excludes credentials, local environment files, repository identity and nested release ZIPs.
 
-## Production acceptance checklist
+Commands: `node scripts/vercel-build.mjs`, `npm run build`, `node scripts/validate-artifact.mjs`.
 
-1. Enable Google in Firebase and authorize your production hostname.
-2. Sign up with a new Google account; choose and save a career. Sign out and back
-   in with the same account. Confirm the saved goal remains.
-3. Verify an existing email/password account, password reset, and sign-out.
-4. Add the learning library as admin; repeat the operation and confirm zero new
-   records are added on the second run.
-5. As a learner, complete a lesson and quiz; refresh and check scores and history.
-6. Generate an AI plan. Verify personalized text appears. If the provider rejects
-   the request, check the visible message and confirm saved scores remain.
-7. Check phone widths 320/390 px, tablet widths 768/1024 px, desktop widths
-   1440/1920 px, phone landscape, and 200% browser zoom.
-8. Check keyboard navigation, mobile drawer dismissal, Google popup cancellation,
-   admin editor scrolling, long content, and assessment navigation.
+## Remaining live checks
+
+Firebase sign-in/storage, Google popups, Resend delivery, actual IAM and AI generation need the operator’s accounts. Browser visual/device testing could not run because the required browser-preview capability was unavailable. Responsive styles and rendered HTML checks are not substitutes for live browser testing. Complete LAUNCH.md on the real deployment before inviting learners.

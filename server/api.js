@@ -1,13 +1,15 @@
+import {ASSESSMENT_POLICY} from '../public/js/assessment-policy.js';
+import {handleRecovery} from './recovery.js';
 import {AppError,must,clean,validId,pathway,deterministicRoadmap,scoreQuestions,validateRecord,validateCatalog,validateAI,fingerprint} from './engine.js';
 import {configuration,verifyUser,Firestore} from './firebase.js';
-import {SEED} from './seed.js';
+import {SEED,LEGACY_LESSONS} from './seed.js';
 import {requestAI,aiModel} from './ai.js';
 const collections=['competencies','careers','modules','questions'];
 const strip=record=>{if(!record)return record;const {_updateTime,...data}=record;return data;};
 const nowISO=()=>new Date().toISOString();
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 async function readBody(request){must(Number(request.headers.get('content-length')||0)<=65536,'Request is too large.',413);const reader=request.body?.getReader();if(!reader)return {};let bytes=0,chunks=[];while(true){const {value,done}=await reader.read();if(done)break;bytes+=value.length;if(bytes>65536){await reader.cancel();throw new AppError(413,'Request is too large.');}chunks.push(value);}const full=new Uint8Array(bytes);let offset=0;for(const c of chunks){full.set(c,offset);offset+=c.length;}try{return JSON.parse(new TextDecoder().decode(full)||'{}');}catch{throw new AppError(400,'Invalid JSON request.');}}
-async function catalog(db,questions=false){const types=questions?collections:collections.slice(0,3);const values=await Promise.all(types.map(c=>db.all(c)));return Object.fromEntries(types.map((c,i)=>[c,values[i]]));}
+async function catalog(db,questions=false){const types=questions?collections:collections.slice(0,3);const values=await Promise.all(types.map(c=>db.all(c,c==='questions'?10000:500)));return Object.fromEntries(types.map((c,i)=>[c,values[i]]));}
 async function profileFor(db,user){const path=`users/${user.uid}`;let profile=await db.get(path);if(!profile){profile={id:user.uid,name:user.name||user.email.split('@')[0]||'Learner',email:user.email,careerId:'',education:'',department:'',year:'',weeklyStudyHours:7,existingSkills:'',createdAt:nowISO()};try{await db.put(path,profile,null);profile=await db.get(path);}catch(e){if(e.status!==409)throw e;profile=await db.get(path);}}return profile;}
 const progressFor=async(db,uid)=>(await db.get(`progress/${uid}`))||{scores:{},weakConcepts:{},completedModules:[],revision:0};
 async function generate(db,env,user,catalogData,profile,progress,fetcher=fetch){
@@ -34,13 +36,15 @@ export async function handleAPI(request,env,deps={}){
  try{
  const url=new URL(request.url),path=url.pathname.replace(/^\/api\/?/,'').replace(/\/$/,''),method=request.method;
  if(path==='config'&&method==='GET')return json(configuration(env));
- if(path==='health'&&method==='GET')return json({status:'ok',version:'1.2.0'});
+ if(path==='health'&&method==='GET')return json({status:'ok',version:'1.4.0'});
  must(configuration(env).ready,'Firebase setup is incomplete. Open Setup for the required configuration.',503);
  must(['GET','POST','PUT','DELETE'].includes(method),'Method not allowed.',405);
  if(method!=='GET'){const origin=request.headers.get('origin');must(!origin||origin===url.origin,'Cross-origin writes are not allowed.',403);must((request.headers.get('content-type')||'').startsWith('application/json'),'Send JSON content.',415);}
- const user=await (deps.verify||verifyUser)(request,env);const db=deps.db||new Firestore(env);
+ const db=deps.db||new Firestore(env);
  const body=method==='GET'?{}:await readBody(request);
  must(body!==null&&typeof body==='object'&&!Array.isArray(body),'Send a JSON object.',400);
+ if(path.startsWith('recovery/')&&method==='POST')return json(await handleRecovery(path,body,env,db,deps));
+ const user=await (deps.verify||verifyUser)(request,env);
  if(path.startsWith('admin'))must(user.admin,'Administrator access is required.',403);
  if(path==='bootstrap'&&method==='GET'){
  const [profile,progress,cat,journey,history,meta]=await Promise.all([profileFor(db,user),progressFor(db,user.uid),catalog(db),db.get(`journeys/${user.uid}`),db.list(`users/${user.uid}/history`,{limit:30}),db.get('metadata/catalog')]);
@@ -58,14 +62,15 @@ export async function handleAPI(request,env,deps={}){
  if(!progress.completedModules.includes(id)){const old=progress._updateTime?progress:null;await db.put(`progress/${user.uid}`,{...strip(progress),completedModules:[...progress.completedModules,id],revision:progress.revision+1,updatedAt:nowISO()},old);}return json({saved:true});
  }
  if(path==='assessments/start'&&method==='POST'){
- const [cat,profile,progress]=await Promise.all([catalog(db,true),profileFor(db,user),progressFor(db,user.uid)]);const nodes=pathway(cat,profile.careerId,progress);must(nodes.length,'Select a career in your profile first.');const competencyId=body.competencyId||null;if(competencyId){const node=nodes.find(n=>n.id===competencyId);must(node&&node.status!=='locked','This competency is locked or not in your career path.',403);}
- const previous=await db.get(`sessions/${user.uid}`);if(previous?.status==='active'&&previous.expiresAt>Date.now()&&previous.competencyId===competencyId&&previous.careerId===profile.careerId)return json({id:previous.id,questions:previous.questions.map(({correctIndex,explanation,...q})=>q),expiresAt:previous.expiresAt});
- const selected=nodes.filter(n=>!competencyId||n.id===competencyId);const questions=selected.flatMap(n=>cat.questions.filter(q=>q.competencyId===n.id).map(q=>({q,rank:Math.random()})).sort((a,b)=>a.rank-b.rank).slice(0,5).map(({q})=>q)).slice(0,60).map(q=>{const options=q.options.map((text,index)=>({text,index,rank:Math.random()})).sort((a,b)=>a.rank-b.rank);return {...strip(q),options:options.map(o=>o.text),correctIndex:options.findIndex(o=>o.index===q.correctIndex)};});must(questions.length,'No questions are available yet. Ask an admin to add a question bank.',409);
- const session={id:crypto.randomUUID(),careerId:profile.careerId,competencyId,questions,status:'active',expiresAt:Date.now()+60*60*1000,createdAt:nowISO()};await db.put(`sessions/${user.uid}`,session,previous);return json({id:session.id,questions:questions.map(({correctIndex,explanation,...q})=>q),expiresAt:session.expiresAt});
+ const [cat,profile,progress]=await Promise.all([catalog(db,true),profileFor(db,user),progressFor(db,user.uid)]);const nodes=pathway(cat,profile.careerId,progress);must(nodes.length,'Select a career in your profile first.');const competencyId=body.competencyId||nodes.find(n=>n.status!=='locked'&&n.status!=='mastered')?.id||nodes.find(n=>n.status!=='locked')?.id;if(competencyId){const node=nodes.find(n=>n.id===competencyId);must(node&&node.status!=='locked','This competency is locked or not in your career path.',403);}
+ const previous=await db.get(`sessions/${user.uid}`);if(previous?.policy?.version===ASSESSMENT_POLICY.version&&previous?.status==='active'&&previous.expiresAt>Date.now()&&previous.competencyId===competencyId&&previous.careerId===profile.careerId)return json({id:previous.id,questions:previous.questions.map(({correctIndex,explanation,...q})=>q),expiresAt:previous.expiresAt,competencyId,policy:ASSESSMENT_POLICY});
+ const bank=cat.questions.filter(q=>q.competencyId===competencyId);must(bank.length>=ASSESSMENT_POLICY.questionCount,`This competency needs ${ASSESSMENT_POLICY.questionCount} questions before assessment. Ask an admin to add ${ASSESSMENT_POLICY.questionCount-bank.length} more.`,409);
+ const questions=bank.map(q=>({q,rank:Math.random()})).sort((a,b)=>a.rank-b.rank).slice(0,ASSESSMENT_POLICY.questionCount).map(({q})=>{const options=q.options.map((text,index)=>({text,index,rank:Math.random()})).sort((a,b)=>a.rank-b.rank);return {...strip(q),options:options.map(o=>o.text),correctIndex:options.findIndex(o=>o.index===q.correctIndex)};});
+ const session={id:crypto.randomUUID(),careerId:profile.careerId,competencyId,questions,policy:ASSESSMENT_POLICY,status:'active',expiresAt:Date.now()+60*60*1000,createdAt:nowISO()};await db.put(`sessions/${user.uid}`,session,previous);return json({id:session.id,questions:questions.map(({correctIndex,explanation,...q})=>q),expiresAt:session.expiresAt,competencyId,policy:ASSESSMENT_POLICY});
  }
  if(path==='assessments/submit'&&method==='POST'){
- const session=await db.get(`sessions/${user.uid}`);must(session&&session.id===body.sessionId,'Assessment session not found.',404);if(session.status==='submitted')return json(session.result);must(session.expiresAt>Date.now(),'Assessment expired. Start a new attempt.',409);const result=scoreQuestions(session.questions,body.answers),progress=await progressFor(db,user.uid);const updated={...strip(progress),scores:{...progress.scores,...result.scores},weakConcepts:{...progress.weakConcepts,...result.weakConcepts},revision:progress.revision+1,updatedAt:nowISO()};
- const id=String(9999999999999-Date.now())+'-'+crypto.randomUUID().slice(0,8);const summary={id,createdAt:nowISO(),score:result.overall,competencyId:session.competencyId,scores:result.scores,questionCount:session.questions.length};
+ const session=await db.get(`sessions/${user.uid}`);must(session&&session.id===body.sessionId,'Assessment session not found.',404);if(session.status==='submitted')return json(session.result);must(session.policy?.version===ASSESSMENT_POLICY.version,'Assessment rules changed. Start a new 40-question assessment.',409);must(session.expiresAt>Date.now(),'Assessment expired. Start a new attempt.',409);const currentProfile=await profileFor(db,user);must(currentProfile.careerId===session.careerId,'Your career changed. Start a new assessment for your current path.',409);const result=scoreQuestions(session.questions,body.answers),progress=await progressFor(db,user.uid);const updated={...strip(progress),scores:{...progress.scores,...result.scores},weakConcepts:{...progress.weakConcepts,...result.weakConcepts},revision:progress.revision+1,updatedAt:nowISO()};
+ const id=String(9999999999999-Date.now())+'-'+crypto.randomUUID().slice(0,8);const summary={id,createdAt:nowISO(),score:result.overall,competencyId:session.competencyId,scores:result.scores,questionCount:session.questions.length,policy:ASSESSMENT_POLICY,marks:result.marks,correct:result.correct,wrong:result.wrong,unanswered:result.unanswered,passed:result.passed};
  const graphCatalog=await catalog(db);const graphSnapshot={id,createdAt:summary.createdAt,careerId:session.careerId,revision:updated.revision,nodes:pathway(graphCatalog,session.careerId,updated),weakConcepts:updated.weakConcepts};const nextSession={...strip(session),status:'submitted',result:{...result,createdAt:summary.createdAt}};await db.commit([db.write(`progress/${user.uid}`,updated,progress._updateTime?progress:null),db.write(`sessions/${user.uid}`,nextSession,session),db.write(`users/${user.uid}/history/${id}`,summary,null),db.write(`users/${user.uid}/graphVersions/${id}`,graphSnapshot,null)]);return json(nextSession.result);
  }
  if(path==='journey/generate'&&method==='POST'){
@@ -75,7 +80,33 @@ export async function handleAPI(request,env,deps={}){
  const [cat,users]=await Promise.all([catalog(db,true),db.list('users',{limit:50,pageToken:url.searchParams.get('pageToken')||''})]);return json({catalog:cat,users:users.items,nextPageToken:users.nextPageToken,configuration:{aiConfigured:configuration(env).aiConfigured},seedSummary:Object.fromEntries(collections.map(type=>[type,SEED[type].length])),adminUid:user.uid});
  }
  if(path==='admin/seed'&&method==='POST'){
- const meta=await db.get('metadata/catalog'),cat=await catalog(db,true),writes=[];for(const type of collections)for(const item of SEED[type])if(!cat[type].some(d=>d.id===item.id)){cat[type].push(item);writes.push(db.write(`${type}/${item.id}`,{...item,updatedAt:nowISO()},null));}validateCatalog(cat);const count=writes.length;if(count){writes.push(db.write('metadata/catalog',{revision:(meta?.revision||0)+1,updatedAt:nowISO()},meta));await db.commit(writes);}return json({added:count});
+ const meta=await db.get('metadata/catalog'),cat=await catalog(db,true),writes=[];let added=0,updated=0,preserved=0;
+ for(const type of collections)for(const item of SEED[type]){
+  const old=cat[type].find(d=>d.id===item.id);
+  if(!old){
+   // An administrator may have used a custom lesson ID for the same competency.
+   if(type==='modules'&&cat.modules.some(m=>m.competencyId===item.competencyId)){preserved++;continue;}
+   cat[type].push(item);writes.push(db.write(`${type}/${item.id}`,{...item,updatedAt:nowISO()},null));added++;
+  }else if(type==='modules'&&body.refreshResources===true&&LEGACY_LESSONS[item.id]){
+   const legacy=LEGACY_LESSONS[item.id],sameResources=(a,b)=>JSON.stringify(a.map(r=>[r.label,r.url]))===JSON.stringify(b.map(r=>[r.label,r.url]));
+   if(old.competencyId!==item.competencyId){preserved++;continue;}
+   if(sameResources(old.resources||[],item.resources))continue;
+   if(!sameResources(old.resources||[],legacy.resources)){preserved++;continue;}
+   const record={...strip(old),resources:item.resources,content:old.content===legacy.content?item.content:old.content,updatedAt:nowISO()};
+   cat.modules=cat.modules.map(m=>m.id===item.id?record:m);writes.push(db.write(`modules/${item.id}`,record,old));updated++;
+  }
+ }
+ const pending=writes.length;const batch=writes.slice(0,350);validateCatalog(cat);if(batch.length){batch.push(db.write('metadata/catalog',{revision:(meta?.revision||0)+1,updatedAt:nowISO()},meta));await db.commit(batch);}
+ return json({added:Math.min(added,350-updated),updated,preserved,processed:Math.min(pending,350),remaining:Math.max(0,pending-350)});
+ }
+ if(path==='admin/questions/import'&&method==='POST'){
+ must(Array.isArray(body.records)&&body.records.length>0&&body.records.length<=40,'Import between 1 and 40 questions per batch.');
+ const [cat,meta]=await Promise.all([catalog(db,true),db.get('metadata/catalog')]);const writes=[];let skipped=0;
+ const signature=q=>q.competencyId+'|'+q.prompt.trim().toLowerCase().replace(/\s+/g,' ');const signatures=new Set(cat.questions.map(signature));
+ for(const input of body.records){const record=validateRecord('questions',input,input.id);must(cat.competencies.some(c=>c.id===record.competencyId),`Unknown competency: ${record.competencyId}`);const old=cat.questions.find(q=>q.id===record.id);
+ if(old){must(signature(old)===signature(record),`Question ID ${record.id} already belongs to a different question.`,409);skipped++;continue;}
+ if(signatures.has(signature(record))){skipped++;continue;}must(cat.questions.length<10000,'Question bank limit reached.');cat.questions.push(record);signatures.add(signature(record));writes.push(db.write(`questions/${record.id}`,{...record,updatedAt:nowISO()},null));}
+ const imported=writes.length;if(imported){writes.push(db.write('metadata/catalog',{revision:(meta?.revision||0)+1,updatedAt:nowISO()},meta));await db.commit(writes);}return json({imported,skipped});
  }
  const match=path.match(/^admin\/(competencies|careers|modules|questions)\/(.+)$/);
  if(match&&['PUT','DELETE'].includes(method)){
@@ -83,7 +114,7 @@ export async function handleAPI(request,env,deps={}){
  must(validId(id),'Record ID must use 1–80 lowercase letters, numbers, hyphens or underscores. For example: python-basics.');const meta=await db.get('metadata/catalog'),cat=await catalog(db,true),old=cat[type].find(x=>x.id===id)||null;
  must((old?._updateTime||null)===(body.expectedUpdateTime||null),'Record changed. Refresh before saving.',409);let write;
  if(method==='DELETE'){must(old,'Record not found.',404);cat[type]=cat[type].filter(x=>x.id!==id);write=db.remove(`${type}/${id}`,old);}
- else{must(old||cat[type].length<400,'Maximum catalog size reached.');const record={...validateRecord(type,body.record,id),updatedAt:nowISO()};cat[type]=[...cat[type].filter(x=>x.id!==id),record];write=db.write(`${type}/${id}`,record,old);}
+ else{must(old||cat[type].length<(type==='questions'?10000:400),'Maximum catalog size reached.');const record={...validateRecord(type,body.record,id),updatedAt:nowISO()};cat[type]=[...cat[type].filter(x=>x.id!==id),record];write=db.write(`${type}/${id}`,record,old);}
  validateCatalog(cat);await db.commit([write,db.write('metadata/catalog',{revision:(meta?.revision||0)+1,updatedAt:nowISO()},meta)]);return json({saved:true});
  }
  throw new AppError(404,'API route not found.');

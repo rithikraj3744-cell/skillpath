@@ -1,4 +1,5 @@
 import {validRecordId} from '../public/js/record-id.js';
+import {ASSESSMENT_POLICY} from '../public/js/assessment-policy.js';
 export class AppError extends Error { constructor(status,message){super(message);this.status=status;} }
 export const must=(condition,message,status=400)=>{if(!condition)throw new AppError(status,message);};
 export const clean=(s,max=200)=>typeof s==='string'?s.trim().slice(0,max):'';
@@ -11,13 +12,16 @@ export function topo(competencies){
 export function pathway(catalog,careerId,progress={}){
  const career=catalog.careers.find(c=>c.id===careerId);if(!career)return [];
  const ids=new Set(career.competencyIds);let changed=true;while(changed){changed=false;for(const c of catalog.competencies)if(ids.has(c.id))for(const p of c.prerequisites)if(!ids.has(p)){ids.add(p);changed=true;}}
- return topo(catalog.competencies).filter(c=>ids.has(c.id)).map(c=>{const score=progress.scores?.[c.id]||0;const eligible=c.prerequisites.every(id=>(progress.scores?.[id]||0)>=90);return {...c,score,gap:Math.max(c.requiredLevel-score,0),status:score>=90?'mastered':!eligible?'locked':score>0&&score<40?'weak':score>0?'learning':'available'};});
+ const ordered=[...ids].map(id=>{const c=catalog.competencies.find(c=>c.id===id);must(c,`Missing competency: ${id}`);return c;});
+ return topo(ordered).map(c=>{const score=progress.scores?.[c.id]||0;const eligible=c.prerequisites.every(id=>(progress.scores?.[id]||0)>=ASSESSMENT_POLICY.passPercent);return {...c,requiredLevel:ASSESSMENT_POLICY.passPercent,score,gap:Math.max(ASSESSMENT_POLICY.passPercent-score,0),status:score>=ASSESSMENT_POLICY.passPercent?'mastered':!eligible?'locked':score>0&&score<40?'weak':score>0?'learning':'available'};});
 }
 export function deterministicRoadmap(nodes,modules){return nodes.filter(n=>n.status!=='mastered').map(n=>({competencyId:n.id,name:n.name,reason:n.status==='locked'?'Complete prerequisites first.':n.status==='weak'?'Strengthen this competency before progressing.':'Build this skill to reach your career goal.',objectives:modules.find(m=>m.competencyId===n.id)?.objectives||[n.description],estimatedHours:Math.max(1,Math.round((100-n.score)/25))}));}
 export function scoreQuestions(questions,answers){
- must(Array.isArray(answers)&&answers.length===questions.length,'Answer every question.');const by={},review=[];
- questions.forEach((q,i)=>{must(Number.isInteger(answers[i])&&answers[i]>=0&&answers[i]<q.options.length,'Invalid answer.');const correct=answers[i]===q.correctIndex;const group=by[q.competencyId]||{correct:0,total:0,weakConcepts:[]};group.total++;if(correct)group.correct++;else if(q.concept&&!group.weakConcepts.includes(q.concept))group.weakConcepts.push(q.concept);by[q.competencyId]=group;review.push({prompt:q.prompt,selected:q.options[answers[i]],correct:q.options[q.correctIndex],isCorrect:correct,explanation:q.explanation});});
- const scores=Object.fromEntries(Object.entries(by).map(([id,v])=>[id,Math.round(v.correct/v.total*100)]));return {scores,weakConcepts:Object.fromEntries(Object.entries(by).map(([id,v])=>[id,v.weakConcepts])),overall:Math.round(review.filter(r=>r.isCorrect).length/questions.length*100),review};
+ must(questions.length>0&&Array.isArray(answers)&&answers.length===questions.length,'Include every question; use null for an unanswered question.');const by={},review=[];
+ questions.forEach((q,i)=>{const skipped=answers[i]===null;must(skipped||Number.isInteger(answers[i])&&answers[i]>=0&&answers[i]<q.options.length,'Invalid answer.');const correct=!skipped&&answers[i]===q.correctIndex;const group=by[q.competencyId]||{correct:0,wrong:0,unanswered:0,total:0,weakConcepts:[]};group.total++;group[skipped?'unanswered':correct?'correct':'wrong']++;if(!correct&&q.concept&&!group.weakConcepts.includes(q.concept))group.weakConcepts.push(q.concept);by[q.competencyId]=group;review.push({prompt:q.prompt,selected:skipped?'Unanswered':q.options[answers[i]],correct:q.options[q.correctIndex],isCorrect:correct,unanswered:skipped,marks:skipped?0:correct?1:-0.25,explanation:q.explanation});});
+ const summarize=v=>{const marks=v.correct-v.wrong*ASSESSMENT_POLICY.wrongPenalty,percent=Math.max(0,marks/v.total*100);return {correct:v.correct,wrong:v.wrong,unanswered:v.unanswered,total:v.total,marks,maxMarks:v.total,percent:Math.round(percent*100)/100,passed:marks*100>=v.total*ASSESSMENT_POLICY.passPercent};};
+ const breakdown=Object.fromEntries(Object.entries(by).map(([id,v])=>[id,summarize(v)])),total=Object.values(by).reduce((a,v)=>({correct:a.correct+v.correct,wrong:a.wrong+v.wrong,unanswered:a.unanswered+v.unanswered,total:a.total+v.total}),{correct:0,wrong:0,unanswered:0,total:0}),summary=summarize(total);
+ return {...summary,policy:ASSESSMENT_POLICY,breakdown,scores:Object.fromEntries(Object.entries(breakdown).map(([id,v])=>[id,v.percent])),weakConcepts:Object.fromEntries(Object.entries(by).map(([id,v])=>[id,v.weakConcepts])),overall:summary.percent,review};
 }
 const textField=(obj,k,max,required=true)=>{const v=clean(obj[k],max);must(!required||v,`${k} is required.`);return v;};
 const strings=(v,max=30)=>{must(Array.isArray(v)&&v.length<=max&&v.every(x=>typeof x==='string'&&x.trim().length>0&&x.length<=200),'Invalid list.');return [...new Set(v.map(x=>x.trim()))];};

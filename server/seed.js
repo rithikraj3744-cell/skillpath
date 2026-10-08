@@ -1,4 +1,7 @@
 import {EXTRA_CONTENT} from './curriculum.js';
+import {QUESTION_TOPICS} from './question-topics.js';
+import {CAREER_CONTENT} from './career-content.js';
+import {LEARNING_RESOURCES} from './learning-resources.js';
 const definitions=[
  ['html','HTML Fundamentals',[],'Structure accessible pages with semantic HTML.'],
  ['css','CSS & Responsive Design',['html'],'Create responsive layouts with flexbox, grid, and media queries.'],
@@ -47,3 +50,24 @@ const questionRows=[
 export const SEED={competencies:definitions.map(([id,name,prerequisites,description],i)=>({id,name,description,prerequisites,requiredLevel:90,category:i<5?'Frontend':i<10?'Backend':'Engineering',difficulty:i<3?'Beginner':i<10?'Intermediate':'Advanced'})),careers:[{id:'full-stack',name:'Full Stack Developer',description:'Build, secure, and deploy complete web applications.',competencyIds:definitions.map(x=>x[0])},{id:'frontend',name:'Frontend Developer',description:'Build accessible, responsive web interfaces.',competencyIds:['html','css','javascript','dom','async','git']},{id:'backend',name:'Backend Developer',description:'Build secure APIs and persistent application data.',competencyIds:['javascript','async','git','rest','firebase','auth','firestore','security','deployment']}],modules:definitions.map(([id,name,,description])=>({id:id+'-module',title:name,competencyId:id,objectives:[description,'Apply the concept in a small practical exercise.','Explain your approach and verify the result.'],content:description+'\n\n'+practice[id]+'\n\nWork through the linked documentation, implement the practice activity, and then take the competency quiz. Your assessment score determines whether dependent competencies unlock.',practice:practice[id],durationMinutes:45,resources:[{label:id==='git'?'Git documentation':['firebase','auth','firestore'].includes(id)?'Firebase documentation':'MDN Web documentation',url:id==='git'?'https://git-scm.com/doc':['firebase','auth','firestore'].includes(id)?'https://firebase.google.com/docs':'https://developer.mozilla.org/en-US/docs/Learn_web_development'}]})),questions:questionRows.map(([competencyId,prompt,options,correctIndex,explanation,concept],i)=>({id:'question-'+String(i+1).padStart(3,'0'),competencyId,prompt,options,correctIndex,explanation,concept,difficulty:'Beginner'}))};
 
 for(const type of ['competencies','careers','modules','questions'])SEED[type].push(...EXTRA_CONTENT[type]);
+
+// Keep exact previous resource defaults for a conservative, opt-in migration.
+export const LEGACY_LESSONS=Object.fromEntries(SEED.modules.map(m=>[m.id,{resources:structuredClone(m.resources),content:m.content}]));
+for(const type of ['competencies','careers','modules','questions'])SEED[type].push(...CAREER_CONTENT[type]);
+for(const module of SEED.modules){
+ module.resources=structuredClone(LEARNING_RESOURCES[module.competencyId]||module.resources);
+ module.content=module.content.replace('Work through the linked documentation','Work through the linked free course or English video');
+}
+// Four distinct review formats per concept. Retain stable IDs of existing questions.
+for(const competency of SEED.competencies){
+ competency.requiredLevel=60;
+ const topics=QUESTION_TOPICS[competency.id],existing=SEED.questions.filter(q=>q.competencyId===competency.id).length;
+ for(let index=0;index<40-existing;index++){
+  const topicIndex=index%topics.length,variant=Math.floor(index/topics.length),[concept,principle,misconception]=topics[topicIndex];
+  const others=[1,3,5].map(offset=>topics[(topicIndex+offset)%topics.length]);
+  const prompts=[`Which ${competency.name} concept is illustrated by this guidance: “${principle}”?`,`Which statement specifically describes ${concept.toLowerCase()} in ${competency.name}?`,`A learner proposes: “${misconception}” Which correction directly addresses this mistake?`,`Which statement about ${competency.name} should be rejected?`];
+  let choices=variant===0?[concept,...others.map(t=>t[0])]:variant===3?[misconception,...others.map(t=>t[1])]:[principle,...others.map(t=>t[1])];
+  const rotation=index%4;choices=[...choices.slice(rotation),...choices.slice(0,rotation)];
+  SEED.questions.push({id:`bank-${competency.id}-${String(index+1).padStart(2,'0')}`,competencyId:competency.id,prompt:prompts[variant]+(variant===3?` Focus: ${concept}.`:''),options:choices,correctIndex:(4-rotation)%4,explanation:`${concept}: ${principle} ${variant===3?'The rejected statement is a misconception.':''}`.trim(),concept,difficulty:'Beginner'});
+ }
+}
