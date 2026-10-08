@@ -4,7 +4,7 @@
 
 - The browser enters fullscreen from the learner's Start/Resume click. A browser that cannot grant fullscreen cannot start a new attempt; no daily slot is consumed by a fullscreen failure.
 - A competency allows **three starts per learner per calendar day**, resetting at **00:00 Asia/Kolkata (India time)**. A submitted, ended, expired or automatically closed attempt consumes its start. Resuming the same active attempt does not consume another.
-- A hidden tab, minimized window, or fullscreen exit is a departure. Related visibility/fullscreen/page-hide events during one absence count once. Counting re-arms after the learner returns to a visible fullscreen document.
+- A hidden tab, window losing focus (including switching apps), minimized window, or fullscreen exit is a departure. Related blur/visibility/fullscreen/page-hide events during one absence count once. Counting re-arms after the learner returns to the visible, focused tab, even if fullscreen still needs resuming. Answers stay paused until fullscreen resumes.
 - The **third departure** ends the active attempt and locks that competency for the rest of the day, even if fewer than three starts were used. Lessons and study guidance remain available. If an attempt crosses midnight, a third departure locks the competency for the current day too.
 - Only a normally submitted assessment updates mastery. Closed, expired or manually ended attempts preserve existing mastery and contribute answer evidence for revision. Scoring remains 40 questions, +1 correct, −0.25 wrong, 0 unanswered, 60% pass target.
 

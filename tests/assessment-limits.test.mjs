@@ -70,3 +70,21 @@ test('fullscreen failure is actionable and monitor cleanup prevents a completion
  await assert.rejects(enterAssessmentFullscreen({fullscreenEnabled:true,documentElement:{requestFullscreen:async()=>{throw new Error('denied');}}}),/not allowed/);
  const doc=new FocusSurface(),win=new FocusSurface();let exits=0;const stop=watchAssessmentFocus({doc,win,onExit:()=>exits++,onPause:()=>{},onTick:()=>{},expiresAt:9999});stop();doc.fullscreenElement=null;doc.dispatchEvent(new Event('fullscreenchange'));assert.equal(exits,0);
 });
+
+test('repeated tab switches count while fullscreen remains exited',()=>{
+ const doc=new FocusSurface(),win=new FocusSurface();let exits=0,paused=false;
+ const stop=watchAssessmentFocus({doc,win,onExit:()=>exits++,onPause:v=>paused=v,onTick:()=>{},expiresAt:9999});
+ for(let i=1;i<=3;i++){
+  win.dispatchEvent(new Event('blur'));doc.hidden=true;doc.dispatchEvent(new Event('visibilitychange'));
+  doc.fullscreenElement=null;doc.dispatchEvent(new Event('fullscreenchange'));assert.equal(exits,i);
+  doc.hidden=false;doc.dispatchEvent(new Event('visibilitychange'));win.dispatchEvent(new Event('focus'));assert.equal(paused,true);
+ }
+ stop();
+});
+test('switching windows without hiding the tab counts once per departure and cleans up',()=>{
+ const doc=new FocusSurface(),win=new FocusSurface();let exits=0;
+ const stop=watchAssessmentFocus({doc,win,onExit:()=>exits++,onPause:()=>{},onTick:()=>{},expiresAt:9999});
+ win.dispatchEvent(new Event('blur'));win.dispatchEvent(new Event('blur'));win.timer();assert.equal(exits,1);
+ win.dispatchEvent(new Event('focus'));win.dispatchEvent(new Event('blur'));assert.equal(exits,2);
+ stop();win.dispatchEvent(new Event('focus'));win.dispatchEvent(new Event('blur'));assert.equal(exits,2);
+});

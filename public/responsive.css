@@ -298,6 +298,7 @@ html:fullscreen { background: #f5f6fb; overflow: auto; }
 .assessment-active .shell { grid-template-columns: minmax(0,1fr); }
 .assessment-active main { max-width: 1200px; margin: auto; }
 .assessment-status { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; background: #302050; color: white; padding: 1rem 1.25rem; border-radius: .8rem; margin-bottom: 1rem; }
+.assessment-status strong, .assessment-status span { color: #fff; }
 .assessment-questions { border: 0; padding: 0; min-width: 0; }
 .assessment-questions:disabled { opacity: .5; pointer-events: none; }
 #focus-notice { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
