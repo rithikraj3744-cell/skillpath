@@ -1,3 +1,4 @@
+import {correctionRoute,correctionRevision} from './corrections.js';
 import {assessmentRoute} from './assessments.js';
 import {ASSESSMENT_POLICY} from '../public/js/assessment-policy.js';
 import {handleRecovery} from './recovery.js';
@@ -14,11 +15,12 @@ async function catalog(db,questions=false){const types=questions?collections:col
 async function profileFor(db,user){const path=`users/${user.uid}`;let profile=await db.get(path);if(!profile){profile={id:user.uid,name:user.name||user.email.split('@')[0]||'Learner',email:user.email,careerId:'',education:'',department:'',year:'',weeklyStudyHours:7,existingSkills:'',createdAt:nowISO()};try{await db.put(path,profile,null);profile=await db.get(path);}catch(e){if(e.status!==409)throw e;profile=await db.get(path);}}return profile;}
 const progressFor=async(db,uid)=>(await db.get(`progress/${uid}`))||{scores:{},weakConcepts:{},completedModules:[],revision:0};
 async function generate(db,env,user,catalogData,profile,progress,fetcher=fetch){
+ const correctionMeta=await db.get('metadata/corrections');must(!correctionMeta?.active&&!progress.correctionPending,'Assessment correction is pending. AI guidance is temporarily paused.',409);
  const nodes=pathway(catalogData,profile.careerId,progress);must(nodes.length,'Select a career goal first.');const catalogMeta=await db.get('metadata/catalog');const catalogRevision=catalogMeta?.revision||0;
- const key=await fingerprint({model:aiModel(env),catalogRevision,career:profile.careerId,hours:profile.weeklyStudyHours,nodes:nodes.map(n=>[n.id,n.score,n.description,n.prerequisites]),weak:progress.weakConcepts,modules:catalogData.modules.map(m=>[m.id,m._updateTime])});
+ const key=await fingerprint({correctionRevision:correctionRevision(correctionMeta),model:aiModel(env),catalogRevision,career:profile.careerId,hours:profile.weeklyStudyHours,nodes:nodes.map(n=>[n.id,n.score,n.description,n.prerequisites]),weak:progress.weakConcepts,modules:catalogData.modules.map(m=>[m.id,m._updateTime])});
  const cached=await db.get(`journeys/${user.uid}`);if(cached?.fingerprint===key&&(!(env.GEMINI_API_KEY&&env.GEMINI_MODEL)||cached.source==='gemini'))return {...strip(cached),cached:true};
  const deterministic=deterministicRoadmap(nodes,catalogData.modules);
- if(!nodes.some(n=>n.status!=='mastered')||!env.GEMINI_API_KEY?.trim()||!aiModel(env)){const record={fingerprint:key,source:'rules',catalogRevision,summary:deterministic.length?'Your roadmap is based on your scores and prerequisites. Work through the next available skill.':'You have mastered every competency in this pathway. Choose another career goal to keep learning.',stages:deterministic,createdAt:nowISO(),progressRevision:progress.revision};await db.put(`journeys/${user.uid}`,record);return record;}
+ if(!nodes.some(n=>n.status!=='mastered')||!env.GEMINI_API_KEY?.trim()||!aiModel(env)){const record={correctionRevision:correctionRevision(correctionMeta),fingerprint:key,source:'rules',catalogRevision,summary:deterministic.length?'Your roadmap is based on your scores and prerequisites. Work through the next available skill.':'You have mastered every competency in this pathway. Choose another career goal to keep learning.',stages:deterministic,createdAt:nowISO(),progressRevision:progress.revision};await db.put(`journeys/${user.uid}`,record);return record;}
  // A shared Firestore counter enforces the quota across server instances.
  const date=new Date().toISOString().slice(0,10),usagePath=`aiUsage/${user.uid}_${date}`,usage=await db.get(usagePath);const limit=Math.max(1,Math.min(20,Math.floor(Number(env.AI_DAILY_LIMIT)||5)));must((usage?.count||0)<limit,'Daily AI generation limit reached. Your rule-based roadmap remains available.',429);
  const globalPath=`aiUsage/global_${date}`,globalUsage=await db.get(globalPath);
@@ -31,7 +33,7 @@ async function generate(db,env,user,catalogData,profile,progress,fetcher=fetch){
  const validated=validateAI(parsed,nodes);const fresh=await progressFor(db,user.uid);must(fresh.revision===progress.revision,'Progress changed during generation. Generate again.',409);
  const [freshMeta,freshProfile]=await Promise.all([db.get('metadata/catalog'),db.get(`users/${user.uid}`)]);
  must(freshProfile?.careerId===profile.careerId&&freshProfile?.weeklyStudyHours===profile.weeklyStudyHours,'Your study goal changed during generation. Generate again.',409);
- must((freshMeta?.revision||0)===catalogRevision,'Catalog changed during generation. Generate again.',409);const record={...validated,source:'gemini',catalogRevision,fingerprint:key,createdAt:nowISO(),progressRevision:progress.revision};await db.put(`journeys/${user.uid}`,record);return record;
+ must((freshMeta?.revision||0)===catalogRevision,'Catalog changed during generation. Generate again.',409);const freshCorrection=await db.get('metadata/corrections');must(correctionRevision(freshCorrection)===correctionRevision(correctionMeta)&&!freshCorrection?.active,'Assessment correction started. Generate again later.',409);const record={correctionRevision:correctionRevision(correctionMeta),...validated,source:'gemini',catalogRevision,fingerprint:key,createdAt:nowISO(),progressRevision:progress.revision};await db.put(`journeys/${user.uid}`,record);return record;
 }
 export async function handleAPI(request,env,deps={}){
  try{
@@ -47,10 +49,12 @@ export async function handleAPI(request,env,deps={}){
  if(path.startsWith('recovery/')&&method==='POST')return json(await handleRecovery(path,body,env,db,deps));
  const user=await (deps.verify||verifyUser)(request,env);
  if(path.startsWith('admin'))must(user.admin,'Administrator access is required.',403);
+ if(path.startsWith('admin/corrections/')&&method==='POST')return json(await correctionRoute(path,body,{db,user}));
  if(path==='bootstrap'&&method==='GET'){
- const [profile,progress,cat,journey,history,meta]=await Promise.all([profileFor(db,user),progressFor(db,user.uid),catalog(db),db.get(`journeys/${user.uid}`),db.list(`users/${user.uid}/history`,{limit:30}),db.get('metadata/catalog')]);
- const nodes=pathway(cat,profile.careerId,progress);const validJourney=journey?.progressRevision===progress.revision&&journey.catalogRevision===(meta?.revision||0)?strip(journey):null;
- return json({user,profile:strip(profile),progress:strip(progress),catalog:Object.fromEntries(Object.entries(cat).map(([k,v])=>[k,v.map(strip)])),nodes,journey:validJourney,stages:validJourney?.stages||deterministicRoadmap(nodes,cat.modules),history:history.items.map(strip).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)),aiConfigured:configuration(env).aiConfigured});
+ const [profile,progress,cat,journey,history,meta,correctionMeta]=await Promise.all([profileFor(db,user),progressFor(db,user.uid),catalog(db),db.get(`journeys/${user.uid}`),db.list(`users/${user.uid}/history`,{limit:30}),db.get('metadata/catalog'),db.get('metadata/corrections')]);
+ const nodes=pathway(cat,profile.careerId,progress);const correctionPending=!!(correctionMeta?.active||progress.correctionPending);const validJourney=!correctionPending&&(journey?.correctionRevision||0)===correctionRevision(correctionMeta)&&journey?.progressRevision===progress.revision&&journey.catalogRevision===(meta?.revision||0)?strip(journey):null;
+ const [guardProgress,guardCorrection]=await Promise.all([db.get(`progress/${user.uid}`),db.get('metadata/corrections')]);must((guardProgress?.revision||0)===(progress.revision||0)&&correctionRevision(guardCorrection)===correctionRevision(correctionMeta),'Progress is updating. Refresh to load consistent results.',409);
+ return json({correctionPending,user,profile:strip(profile),progress:strip(progress),catalog:Object.fromEntries(Object.entries(cat).map(([k,v])=>[k,v.map(strip)])),nodes,journey:validJourney,stages:validJourney?.stages||deterministicRoadmap(nodes,cat.modules),history:history.items.map(h=>{const {questionSnapshot,evaluatedQuestions,...safe}=strip(h);return safe;}).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)),aiConfigured:configuration(env).aiConfigured});
  }
  if(path==='profile'&&method==='PUT'){
  const old=await profileFor(db,user),cat=await catalog(db);const name=clean(body.name,100),hours=Number(body.weeklyStudyHours),careerId=clean(body.careerId,80);
@@ -108,8 +112,9 @@ export async function handleAPI(request,env,deps={}){
  const [,type,encodedId]=match;let id;try{id=decodeURIComponent(encodedId);}catch{throw new AppError(400,'Invalid record ID encoding.');}
  must(validId(id),'Record ID must use 1–80 lowercase letters, numbers, hyphens or underscores. For example: python-basics.');const meta=await db.get('metadata/catalog'),cat=await catalog(db,true),old=cat[type].find(x=>x.id===id)||null;
  must((old?._updateTime||null)===(body.expectedUpdateTime||null),'Record changed. Refresh before saving.',409);let write;
- if(method==='DELETE'){must(old,'Record not found.',404);cat[type]=cat[type].filter(x=>x.id!==id);write=db.remove(`${type}/${id}`,old);}
- else{must(old||cat[type].length<(type==='questions'?10000:400),'Maximum catalog size reached.');const record={...validateRecord(type,body.record,id),updatedAt:nowISO()};cat[type]=[...cat[type].filter(x=>x.id!==id),record];write=db.write(`${type}/${id}`,record,old);}
+ if(method==='DELETE'){if(type==='questions')must(!(await db.list(`questions/${id}/answerCorrections`,{limit:1})).items.length,'Corrected questions must retain their identity and audit history.',409);must(old,'Record not found.',404);cat[type]=cat[type].filter(x=>x.id!==id);write=db.remove(`${type}/${id}`,old);}
+ else{if(type==='questions'&&old){must(body.record.correctIndex===old.correctIndex,'Use Correction Studio to change an existing answer key.',409);must(body.record.prompt===old.prompt&&JSON.stringify(body.record.options)===JSON.stringify(old.options)&&body.record.competencyId===old.competencyId&&body.record.concept===old.concept,'Create a new question ID to change wording, options or competency. Existing attempts retain their original question.',409);}
+ must(old||cat[type].length<(type==='questions'?10000:400),'Maximum catalog size reached.');const record={...validateRecord(type,body.record,id),...(type==='questions'?{version:old?.version||1}:{}),updatedAt:nowISO()};cat[type]=[...cat[type].filter(x=>x.id!==id),record];write=db.write(`${type}/${id}`,record,old);}
  validateCatalog(cat);await db.commit([write,db.write('metadata/catalog',{revision:(meta?.revision||0)+1,updatedAt:nowISO()},meta)]);return json({saved:true});
  }
  throw new AppError(404,'API route not found.');
