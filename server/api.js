@@ -1,3 +1,4 @@
+import {qualityRoute,qualityReview} from './question-quality.js';
 import {correctionRoute,correctionRevision} from './corrections.js';
 import {assessmentRoute} from './assessments.js';
 import {ASSESSMENT_POLICY} from '../public/js/assessment-policy.js';
@@ -49,6 +50,7 @@ export async function handleAPI(request,env,deps={}){
  if(path.startsWith('recovery/')&&method==='POST')return json(await handleRecovery(path,body,env,db,deps));
  const user=await (deps.verify||verifyUser)(request,env);
  if(path.startsWith('admin'))must(user.admin,'Administrator access is required.',403);
+ if((path.startsWith('admin/quality/')||['questions/report','questions/attempt'].includes(path))&&method==='POST')return json(await qualityRoute(path,body,{db,user,env,fetcher:deps.fetcher||fetch}));
  if(path.startsWith('admin/corrections/')&&method==='POST')return json(await correctionRoute(path,body,{db,user}));
  if(path==='bootstrap'&&method==='GET'){
  const [profile,progress,cat,journey,history,meta,correctionMeta]=await Promise.all([profileFor(db,user),progressFor(db,user.uid),catalog(db),db.get(`journeys/${user.uid}`),db.list(`users/${user.uid}/history`,{limit:30}),db.get('metadata/catalog'),db.get('metadata/corrections')]);
@@ -70,7 +72,10 @@ export async function handleAPI(request,env,deps={}){
  const allowed=method==='GET'?['assessments/status']:['assessments/start','assessments/checkpoint','assessments/submit','assessments/end','assessments/review'];must(allowed.includes(path),'API route not found.',404);
  const needsCatalog=['assessments/start','assessments/review'].includes(path),needsProfile=['assessments/start','assessments/submit'].includes(path);
  const [cat,profile]=await Promise.all([needsCatalog?catalog(db,path==='assessments/start'):null,needsProfile?profileFor(db,user):{}]);
- return json(await assessmentRoute(path,body,{db,user,cat,profile,env,catalogLoader:()=>catalog(db),fetcher:deps.fetcher||fetch,now:deps.now?deps.now():Date.now()}));
+ const assessmentResult=await assessmentRoute(path,body,{db,user,cat,profile,env,catalogLoader:()=>catalog(db),fetcher:deps.fetcher||fetch,now:deps.now?deps.now():Date.now()});
+ const savedResult=assessmentResult.result||assessmentResult;
+ if(savedResult.qualityFlags?.length){try{await qualityReview(db,env,savedResult.qualityFlags[0],deps.fetcher||fetch);}catch{/* Saved scores must remain available even when AI review is unavailable. */}}
+ return json(assessmentResult);
  }
  if(path==='journey/generate'&&method==='POST'){
  const [cat,profile,progress]=await Promise.all([catalog(db),profileFor(db,user),progressFor(db,user.uid)]);return json(await generate(db,env,user,cat,profile,progress,deps.fetcher||fetch));

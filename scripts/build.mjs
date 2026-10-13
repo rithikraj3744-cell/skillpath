@@ -3,7 +3,7 @@ import {resolve,relative,extname} from 'node:path';
 const root=resolve(import.meta.dirname,'..');
 let source=(await readFile(resolve(root,'public/js/record-id.js'),'utf8')).replace(/\bexport /g,'')+'\n';
 source+=(await readFile(resolve(root,'public/js/assessment-policy.js'),'utf8')).replace(/\bexport /g,'')+'\n';
-for(const file of ['engine.js','firebase.js','curriculum.js','career-content.js','learning-resources.js','question-topics.js','seed.js','ai.js','recovery.js','corrections.js','assessments.js','api.js']){
+for(const file of ['engine.js','firebase.js','curriculum.js','career-content.js','learning-resources.js','question-topics.js','seed.js','ai.js','recovery.js','corrections.js','question-quality.js','assessments.js','api.js']){
  const code=await readFile(resolve(root,'server',file),'utf8');
  source+=`\n// ${file}\n`+code.replace(/^import .*;\n/gm,'').replace(/\bexport (?=(async )?(function|class|const|let)\b)/g,'');
 }

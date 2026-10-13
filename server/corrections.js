@@ -37,10 +37,12 @@ export async function correctionRoute(path,body,{db,user}){
   must(Number.isInteger(body.correctIndex)&&body.correctIndex>=0&&body.correctIndex<q.options.length&&body.correctIndex!==q.correctIndex,'Choose a different correct option.');
   const version=q.version||1,id=String(9999999999999-Date.now())+'-'+crypto.randomUUID(),createdAt=new Date().toISOString();
   const job={id,questionId:q.id,reason:body.reason.trim(),beforeIndex:q.correctIndex,afterIndex:body.correctIndex,fromVersion:version,toVersion:version+1,createdAt,createdBy:user.uid,status:'pending',cursor:{},scanned:0,corrected:0,manualReview:0};
+  let linkedFlag=null;if(body.flagId){must(body.verified===true,'Confirm independent administrator verification before applying a suggested correction.');must(typeof body.flagId==='string'&&/^[a-z0-9_-]{1,100}$/.test(body.flagId),'Invalid review ID.');linkedFlag=await db.get(`questionFlags/${body.flagId}`);must(linkedFlag&&linkedFlag.questionId===q.id&&linkedFlag.version===(q.version||1)&&linkedFlag.status==='open','Review is outdated or closed. Refresh the review queue.',409);job.flagId=body.flagId;}
   const prior=await db.all(`questions/${q.id}/answerCorrections`,100);
   const explanation=body.explanation===undefined?q.explanation:body.explanation.trim();must(explanation&&explanation.length<=3000,'Provide the corrected explanation (up to 3000 characters).');
   const override={correctText:q.options[body.correctIndex],explanation,correctionId:id};
   const writes=[db.write(`corrections/${id}`,job,null),db.write(`questions/${q.id}/versions/${version}`,correctionStrip(q)),db.write(`questions/${q.id}`,{...correctionStrip(q),version:version+1,correctIndex:body.correctIndex,explanation,updatedAt:createdAt},q),db.write(`questions/${q.id}/answerCorrections/${version}`,override),db.write('metadata/corrections',{revision:correctionRevision(meta)+1,active:id},meta),db.write('metadata/catalog',{revision:(catalog?.revision||0)+1,updatedAt:createdAt},catalog)];
+  if(linkedFlag)writes.push(db.write(`questionFlags/${body.flagId}`,{...correctionStrip(linkedFlag),status:'correction-started',correctionId:id,approvedBy:user.uid,approvedAt:createdAt},linkedFlag));
   for(const old of prior)if(old.id!==String(version))writes.push(db.write(`questions/${q.id}/answerCorrections/${old.id}`,override,old));
   await db.commit(writes);return job;
  }
